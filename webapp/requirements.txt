@@ -1,0 +1,41 @@
+# ── Django Core ─────────────────────────────
+Django>=5.0,<5.1
+gunicorn>=22.0
+whitenoise>=6.6
+
+# ── Django REST Framework ──────────────────
+djangorestframework>=3.15
+
+# ── Database ───────────────────────────────
+psycopg2-binary>=2.9
+dj-database-url>=2.1
+pgvector>=0.3
+
+# ── Redis / Cache ──────────────────────────
+django-redis>=5.4
+redis>=5.0
+
+# ── HTTP Requests ──────────────────────────
+requests>=2.31
+httpx>=0.27
+
+# ── Web Scraping ───────────────────────────
+beautifulsoup4>=4.12
+lxml>=5.1
+selenium>=4.18
+playwright>=1.42
+
+# ── NLP / Text Processing ─────────────────
+tiktoken>=0.6
+numpy>=1.26
+
+# ── Utilities ──────────────────────────────
+python-dotenv>=1.0
+django-cors-headers>=4.3
+markdown>=3.5
+bleach>=6.1
+
+# ── Testing ────────────────────────────────
+pytest>=8.0
+pytest-django>=4.8
+factory-boy>=3.3
