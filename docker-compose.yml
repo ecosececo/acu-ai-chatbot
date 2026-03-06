@@ -1,0 +1,103 @@
+services:
+  # ── Nginx Reverse Proxy ──────────────────────────────────
+  nginx:
+    build: ./nginx
+    container_name: acu-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+    depends_on:
+      webapp:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Django Web Application ───────────────────────────────
+  webapp:
+    build: ./webapp
+    container_name: acu-webapp
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-acu_user}:${POSTGRES_PASSWORD:-acu_secret}@db:5432/${POSTGRES_DB:-acu_chatbot}
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_MODEL=${LLM_MODEL:-mistral}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+    volumes:
+      - ./webapp:/app
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── PostgreSQL with pgvector ─────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: acu-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acu_chatbot}
+      POSTGRES_USER: ${POSTGRES_USER:-acu_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acu_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acu_user} -d ${POSTGRES_DB:-acu_chatbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Redis Cache ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: acu-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Ollama LLM Service ──────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: acu-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # GPU support (uncomment if NVIDIA GPU available)
+    # deploy:
+    #   resources:
+    #     reservations:
+
+
+
+
+
