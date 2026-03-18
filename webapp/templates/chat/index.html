@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACU AI Chatbot — Acıbadem Üniversitesi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
+</head>
+<body>
+    <div class="app">
+        <!-- ── Sidebar ───────────────────────────────── -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">🎓</div>
+                    <div class="logo-text">
+                        <h1>ACU Asistan</h1>
+                        <span>Acıbadem Üniversitesi</span>
+                    </div>
+                </div>
+                <button class="btn-icon sidebar-close" id="sidebarClose" title="Kenar çubuğunu kapat">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <button class="btn btn-primary new-chat-btn" id="newChatBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Yeni Sohbet
+            </button>
+
+            <div class="conversation-list" id="conversationList">
+                <!-- Conversations loaded dynamically -->
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="system-status" id="systemStatus">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Bağlanıyor...</span>
+                </div>
+                <a href="/admin/" class="admin-link" target="_blank">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Admin Panel
+                </a>
+            </div>
+        </aside>
+
+        <!-- ── Main Content ──────────────────────────── -->
+        <main class="main">
+            <!-- Top bar -->
+            <header class="topbar">
+                <button class="btn-icon sidebar-toggle" id="sidebarToggle">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="topbar-title" id="topbarTitle">Yeni Sohbet</div>
+                <div class="topbar-actions">
+                    <button class="btn-icon" id="themeToggle" title="Temayı değiştir">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Chat Messages Area -->
+            <div class="chat-container" id="chatContainer">
+                <!-- Welcome screen shown when no messages -->
+                <div class="welcome" id="welcomeScreen">
+                    <div class="welcome-icon">🎓</div>
+                    <h2>ACU AI Asistan</h2>
+                    <p>Acıbadem Üniversitesi hakkında her şeyi sorabilirsiniz!</p>
+                    <div class="suggestion-grid">
+                        <button class="suggestion-card" data-question="Acıbadem Üniversitesi'nde hangi fakülteler var?">
+                            <div class="suggestion-icon">🏛️</div>
+                            <span>Fakülteler hakkında bilgi</span>
+                        </button>
+                        <button class="suggestion-card" data-question="Bilgisayar Mühendisliği bölümünün ders programı nasıl?">
+                            <div class="suggestion-icon">💻</div>
+                            <span>Bilgisayar Müh. dersleri</span>
+                        </button>
+                        <button class="suggestion-card" data-question="Burs imkânları ve ücretler hakkında bilgi verir misin?">
+                            <div class="suggestion-icon">🎯</div>
+                            <span>Burs ve ücretler</span>
+                        </button>
+                        <button class="suggestion-card" data-question="Kampüs yaşamı ve öğrenci kulüpleri hakkında bilgi ver.">
+                            <div class="suggestion-icon">🏫</div>
+                            <span>Kampüs yaşamı</span>
+                        </button>
+                        <button class="suggestion-card" data-question="Erasmus ve değişim programları hakkında bilgi ver.">
+                            <div class="suggestion-icon">✈️</div>
+                            <span>Erasmus programları</span>
+                        </button>
+                        <button class="suggestion-card" data-question="Nasıl başvuru yapabilirim? Kabul şartları neler?">
+                            <div class="suggestion-icon">📝</div>
+                            <span>Başvuru ve kabul</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Messages area -->
+                <div class="messages" id="messages">
+                    <!-- Messages inserted dynamically -->
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <form class="input-form" id="chatForm">
+                    <div class="input-wrapper">
+                        <textarea
+                            id="questionInput"
+                            placeholder="Acıbadem Üniversitesi hakkında bir soru sorun..."
+                            rows="1"
+                            maxlength="2000"
+                            autofocus
+                        ></textarea>
+                        <button type="submit" class="btn btn-send" id="sendBtn" title="Gönder">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        </button>
+                        <button type="button" class="btn btn-stop hidden" id="stopBtn" title="Durdur">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                        </button>
+                    </div>
+                    <div class="input-footer">
+                        <span class="char-count" id="charCount">0 / 2000</span>
+                        <span class="powered-by">Powered by Ollama + Mistral | RAG with pgvector</span>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
