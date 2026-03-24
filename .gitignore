@@ -1,43 +1,34 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
+*.pyo
+.env
+.venv/
+venv/
 *.egg-info/
-dist/
-build/
-.eggs/
+
+# Database & data exports
+*.sqlite
+*.sqlite3
+*.db
 
 # Django
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
 staticfiles/
-
-# Environment
-.env
-!.env.example
-venv/
-.venv/
+media/
+*.log
 
 # Docker
-docker-compose.override.yml
+.docker/
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Coverage
-htmlcov/
-.coverage
-.coverage.*
-.pytest_cache/
+# Test artifacts (keep reports, exclude raw data)
+test_results.json
+turkish_qa_results.json
