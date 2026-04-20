@@ -12,6 +12,7 @@
 let currentConversationId = null;
 let isGenerating = false;
 let abortController = null;
+const ENABLE_RENDER_TEST_INJECTION = false;
 
 // ── DOM Elements ────────────────────────────────────────
 const chatForm = document.getElementById("chatForm");
@@ -209,37 +210,75 @@ async function handleStreamResponse(response) {
     let fullResponse = "";
     let sources = [];
     let messageEl = null;
+    let buffer = "";
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    const processEventData = (eventData) => {
+        try {
+            const data = JSON.parse(eventData);
 
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split("\n");
-
-        for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-
-            try {
-                const data = JSON.parse(line.substring(6));
-
-                if (data.type === "sources") {
-                    sources = data.sources || [];
-                } else if (data.type === "content") {
-                    fullResponse += data.content;
+            if (data.type === "sources") {
+                sources = data.sources || [];
+            } else if (data.type === "content") {
+                const chunkContent = data.content || "";
+                if (chunkContent) {
+                    fullResponse += chunkContent;
                     if (!messageEl) {
                         messageEl = appendMessage("assistant", "", sources, true);
                     }
                     updateMessageContent(messageEl, fullResponse);
-                } else if (data.type === "done") {
-                    currentConversationId = data.conversation_id;
-                    if (messageEl) {
-                        finishMessage(messageEl, fullResponse, sources, data.response_time_ms);
-                    }
                 }
-            } catch (e) {
-                // Skip malformed JSON
+            } else if (data.type === "done") {
+                currentConversationId = data.conversation_id;
+                if (!messageEl && fullResponse) {
+                    messageEl = appendMessage("assistant", "", sources, true);
+                }
+                if (messageEl) {
+                    finishMessage(messageEl, fullResponse, sources, data.response_time_ms);
+                }
             }
+        } catch (e) {
+            // Skip malformed JSON payloads
+        }
+    };
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            // Process any trailing buffered event without requiring a final delimiter.
+            const trailing = buffer.trim();
+            if (trailing) {
+                const dataLines = trailing
+                    .split("\n")
+                    .map((line) => line.replace(/\r$/, ""))
+                    .filter((line) => line.startsWith("data:"))
+                    .map((line) => line.slice(5).replace(/^\s/, ""));
+                if (dataLines.length > 0) {
+                    processEventData(dataLines.join("\n"));
+                }
+            }
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, "\n");
+
+        // SSE events are separated by an empty line.
+        let eventBoundary = buffer.indexOf("\n\n");
+        while (eventBoundary !== -1) {
+            const rawEvent = buffer.slice(0, eventBoundary);
+            buffer = buffer.slice(eventBoundary + 2);
+
+            const dataLines = rawEvent
+                .split("\n")
+                .map((line) => line.replace(/\r$/, ""))
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice(5).replace(/^\s/, ""));
+
+            if (dataLines.length > 0) {
+                processEventData(dataLines.join("\n"));
+            }
+
+            eventBoundary = buffer.indexOf("\n\n");
         }
     }
 
@@ -269,7 +308,8 @@ function setGenerating(state) {
     sendBtn.classList.toggle("hidden", state);
     stopBtn.classList.toggle("hidden", !state);
     sendBtn.disabled = state;
-    questionInput.disabled = state;
+    questionInput.disabled = false;
+    questionInput.placeholder = state ? "Yanıt bekleniyor... (⏎ ile gönderebilirsiniz)" : "Bir soru sorun...";
 }
 
 function showTypingIndicator() {
@@ -298,7 +338,7 @@ function appendMessage(role, content, sources = [], isStreaming = false, respons
     const name = role === "user" ? "Sen" : "ACU Asistan";
     const time = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
-    const renderedContent = role === "assistant" ? renderMarkdown(content) : escapeHtml(content);
+    const renderedContent = role === "assistant" ? "" : escapeHtml(content);
 
     el.innerHTML = `
         <div class="message-avatar">${avatar}</div>
@@ -313,24 +353,43 @@ function appendMessage(role, content, sources = [], isStreaming = false, respons
         </div>
     `;
 
+    if (role === "assistant") {
+        const bodyEl = el.querySelector(".message-body");
+        if (bodyEl) {
+            setAssistantMessageHtml(bodyEl, content || "");
+        }
+    }
+
     messagesContainer.appendChild(el);
     scrollToBottom();
     return el;
 }
 
+function setAssistantMessageHtml(element, message) {
+    console.log("RAW MESSAGE:", message);
+    const html = renderMarkdown(message || "");
+    console.log("RENDERED HTML:", html);
+    element.innerHTML = html;
+
+    // Temporary injection for render verification.
+    if (ENABLE_RENDER_TEST_INJECTION) {
+        element.innerHTML = "<ul><li>TEST OK</li><li>BULLET WORKING</li></ul>";
+    }
+
+    console.log("FINAL DOM:", element.innerHTML);
+}
+
 function updateMessageContent(messageEl, content) {
     const bodyEl = messageEl.querySelector(".message-body");
     if (bodyEl) {
-        bodyEl.innerHTML = renderMarkdown(content);
+        setAssistantMessageHtml(bodyEl, content || "");
         scrollToBottom();
     }
 }
 
 function finishMessage(messageEl, content, sources, responseTimeMs) {
-    const bodyEl = messageEl.querySelector(".message-body");
-    if (bodyEl) {
-        bodyEl.innerHTML = renderMarkdown(content);
-    }
+    // Body was already rendered by the last updateMessageContent call during streaming.
+    // Re-rendering here would cause a visible flash (innerHTML reset), so we skip it.
 
     // Add sources
     const contentEl = messageEl.querySelector(".message-content");
@@ -395,10 +454,46 @@ function renderSources(sources) {
 
 function renderMarkdown(text) {
     if (!text) return "";
-    if (typeof marked !== "undefined") {
-        return marked.parse(text);
+    const normalized = String(text).replace(/\r\n/g, "\n");
+    const lines = normalized.split("\n");
+    const bulletItems = [];
+    const prefixLines = [];
+    let currentBullet = "";
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        if (/^\s*-\s+/.test(rawLine)) {
+            if (currentBullet) {
+                bulletItems.push(currentBullet.trim());
+            }
+            currentBullet = rawLine.replace(/^\s*-\s+/, "").trim();
+        } else if (currentBullet) {
+            currentBullet += ` ${line}`;
+        } else {
+            prefixLines.push(line);
+        }
     }
-    return escapeHtml(text).replace(/\n/g, "<br>");
+
+    if (currentBullet) {
+        bulletItems.push(currentBullet.trim());
+    }
+
+    if (bulletItems.length > 0) {
+        const itemsHtml = bulletItems
+            .filter(Boolean)
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("");
+        if (itemsHtml) {
+            const prefix = prefixLines.length > 0
+                ? `<div style="white-space: pre-line;">${escapeHtml(prefixLines.join("\n"))}</div>`
+                : "";
+            return `${prefix}<ul>${itemsHtml}</ul>`;
+        }
+    }
+
+    return `<div style="white-space: pre-line;">${escapeHtml(normalized)}</div>`;
 }
 
 function escapeHtml(text) {

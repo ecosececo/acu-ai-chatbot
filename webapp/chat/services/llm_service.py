@@ -5,6 +5,7 @@ Handles prompt engineering, streaming, and error handling.
 
 import json
 import logging
+import re
 import time
 from typing import Generator
 
@@ -14,45 +15,71 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-# ── System Prompt ────────────────────────────────────────
-SYSTEM_PROMPT = """Sen Acıbadem Üniversitesi'nin resmi AI asistanısın. Adın "ACU Asistan".
+NO_CONTEXT_FALLBACK_MESSAGE = (
+    "Bu konuda yeterli bilgi bulunamadı. Lütfen sorunuzu farklı şekilde sormayı deneyin."
+)
 
-## Görevin
-Acıbadem Üniversitesi hakkında sorulan sorulara doğru, güncel ve faydalı yanıtlar vermek.
+SYSTEM_PROMPT = """Sen Acıbadem Üniversitesi için bir bilgi asistanısın.
+Sana verilen BAĞLAM METNİNDEN soruyu yanıtla.
 
-## Kurallar
-1. **YALNIZCA** sana sağlanan bağlam (context) bilgilerine dayanarak cevap ver.
-2. Bağlamda bulunmayan bilgileri **UYDURMA**. Bilmiyorsan "Bu konuda elimde yeterli bilgi yok, lütfen üniversitenin resmi web sitesini ziyaret edin: https://www.acibadem.edu.tr" de.
-3. Yanıtlarını **Türkçe** ver (kullanıcı İngilizce sorarsa İngilizce yanıt ver).
-4. Yanıtların açık, düzenli ve anlaşılır olsun. Gerektiğinde madde işaretleri ve başlıklar kullan.
-5. Akademik programlar, dersler, kredi bilgileri gibi detayları doğru ver.
-6. Kibarlığını koru ve yardımsever ol.
-7. Kaynakları belirt — hangi sayfadan bilgi aldığını söyle.
+KURAL 1: Yanıtında YALNIZCA bağlam metnindeki bilgileri kullan. Bağlamda olmayan bilgi ekleme.
+KURAL 2: Bağlamda cevap yoksa sadece şunu yaz: "Bu konuda bilgi bulunamadı."
+KURAL 3: SADECE TÜRKÇE yaz. İngilizce, Japonca, Çince veya başka dil kesinlikle kullanma. Kısa ve net cümleler kur. Doğrudan yanıta başla."""
 
-## Acıbadem Üniversitesi Hakkında Genel Bilgi
-- Acıbadem Üniversitesi, İstanbul'da bulunan bir vakıf üniversitesidir.
-- Sağlık bilimleri alanında güçlü bir üniversitedir.
-- Ana kampüsü Ataşehir/Kerem Aydınlar Kampüsü'dür.
-- Web sitesi: https://www.acibadem.edu.tr
-- Bologna sistemi: https://obs.acibadem.edu.tr
-
-## Yanıt Formatı
-- Kısa ve öz yanıtlar ver.
-- Gerektiğinde detaylı açıklama yap.
-- Listeleme gerektiren yanıtlarda madde işaretleri kullan.
-- Linkleri paylaş.
-"""
-
-USER_PROMPT_TEMPLATE = """## Sağlanan Bağlam (Context)
-Aşağıdaki bilgiler Acıbadem Üniversitesi'nin resmi web sitelerinden alınmıştır:
-
+USER_PROMPT_TEMPLATE = """BAĞLAM (Acıbadem Üniversitesi resmi sitesinden alınan bilgiler):
 {context}
 
-## Kullanıcı Sorusu
-{question}
+SORU: {question}
 
-## Talimat
-Yukarıdaki bağlam bilgilerini kullanarak kullanıcının sorusunu yanıtla. Bağlamda yoksa bilgiyi uydurma."""
+Yukarıdaki BAĞLAM metnini kullanarak soruyu yanıtla. Bağlam dışı bilgi ekleme.
+ÖNEMLİ: Bağlamda "Hayır" veya "değildir" varsa bunu koru. Kendi bilgini kullanma.
+Yanıt:"""
+
+
+_NOISE_PREFIXES = re.compile(
+    r"^(kısa cevap|short answer|cevap|yanıt|özet)\s*[:：]\s*",
+    re.IGNORECASE,
+)
+
+
+def _strip_rag_metadata(context: str) -> str:
+    """Remove RAG metadata and markdown heading markers from context before sending to LLM."""
+    lines = []
+    for line in context.splitlines():
+        stripped = line.strip()
+        # Drop RAG structural metadata lines
+        if stripped.startswith("### Kaynak"):
+            continue
+        if stripped.startswith("URL:"):
+            continue
+        if stripped.startswith("Benzerlik Skoru:"):
+            continue
+        if stripped == "---":
+            lines.append("")
+            continue
+        # Convert markdown headings to plain text (keep the label, drop the # marks)
+        cleaned_line = re.sub(r"^#{1,4}\s+", "", line.strip())
+        lines.append(cleaned_line)
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
+
+
+_NON_TURKISH_BLOCK = re.compile(
+    r"[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF\u3000-\u303F]+"
+)
+
+
+def _clean_answer(text: str) -> str:
+    """Remove model-injected noise prefixes and non-Turkish script garbage."""
+    text = text.strip()
+    text = _NOISE_PREFIXES.sub("", text).strip()
+    text = re.sub(r"^\n+", "", text)
+    # Truncate at first CJK/full-width character block (model switching to Chinese/Japanese)
+    match = _NON_TURKISH_BLOCK.search(text)
+    if match:
+        text = text[: match.start()].rstrip()
+    return text
 
 
 class LLMService:
@@ -64,7 +91,7 @@ class LLMService:
         self.timeout = httpx.Timeout(timeout=300.0, connect=10.0)
 
     def is_available(self) -> bool:
-        """Check if Ollama service is running and model is available."""
+        """Check if Ollama service is running and the model is available."""
         cache_key = "ollama_available"
         cached = cache.get(cache_key)
         if cached is not None:
@@ -76,10 +103,8 @@ class LLMService:
                 if response.status_code == 200:
                     models = response.json().get("models", [])
                     model_names = [m["name"] for m in models]
-                    # Match full name or base name
-                    available = (
-                        self.model in model_names
-                        or any(self.model.split(":")[0] == n.split(":")[0] for n in model_names)
+                    available = self.model in model_names or any(
+                        self.model.split(":")[0] == n.split(":")[0] for n in model_names
                     )
                     cache.set(cache_key, available, timeout=30)
                     return available
@@ -88,147 +113,144 @@ class LLMService:
             cache.set(cache_key, False, timeout=10)
             return False
 
-    def generate(self, question: str, context: str = "") -> dict:
-        """
-        Generate a response from the LLM.
+        cache.set(cache_key, False, timeout=10)
+        return False
 
-        Returns:
-            dict with keys: answer, model, response_time_ms
-        """
+    def _build_user_prompt(self, question: str, context: str = "") -> str:
+        clean = _strip_rag_metadata(context) if context else ""
+        normalized_context = clean if clean else "(Bağlam bulunamadı)"
+        return USER_PROMPT_TEMPLATE.format(context=normalized_context, question=question)
+
+    def generate(self, question: str, context: str = "") -> dict:
+        """Generate a response using Ollama LLM."""
         start_time = time.time()
 
-        if not context:
-            user_prompt = question
-        else:
-            user_prompt = USER_PROMPT_TEMPLATE.format(
-                context=context,
-                question=question,
-            )
+        if not context or not context.strip():
+            return {"answer": NO_CONTEXT_FALLBACK_MESSAGE, "model": self.model}
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            "stream": False,
-            "options": {
-                "temperature": 0.4,
-                "top_p": 0.9,
-                "num_predict": 512,
-                "repeat_penalty": 1.3,
-                "repeat_last_n": 128,
-            },
-        }
+        user_prompt = self._build_user_prompt(question, context)
 
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(
                     f"{self.base_url}/api/chat",
-                    json=payload,
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.1,
+                            "top_p": 0.9,
+                            "num_predict": 600,
+                            "repeat_penalty": 1.1,
+                        },
+                    },
                 )
                 response.raise_for_status()
                 data = response.json()
+                answer = data.get("message", {}).get("content", "").strip()
+                elapsed_ms = int((time.time() - start_time) * 1000)
 
-            elapsed_ms = int((time.time() - start_time) * 1000)
+                if not answer:
+                    answer = NO_CONTEXT_FALLBACK_MESSAGE
+                else:
+                    answer = _clean_answer(answer)
 
-            return {
-                "answer": data.get("message", {}).get("content", ""),
-                "model": data.get("model", self.model),
-                "response_time_ms": elapsed_ms,
-            }
+                logger.info(f"LLM generated response in {elapsed_ms}ms")
+                return {"answer": answer, "model": self.model, "response_time_ms": elapsed_ms}
 
         except httpx.TimeoutException:
             logger.error("LLM request timed out")
             return {
-                "answer": "Üzgünüm, AI modeli şu anda yanıt vermekte zorlanıyor. Lütfen daha sonra tekrar deneyin.",
+                "answer": "Yanıt süresi aşıldı. Lütfen tekrar deneyin.",
                 "model": self.model,
-                "response_time_ms": int((time.time() - start_time) * 1000),
-                "error": True,
             }
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
-            return {
-                "answer": "Bir hata oluştu. AI servisi şu anda kullanılamıyor olabilir. Lütfen daha sonra tekrar deneyin.",
-                "model": self.model,
-                "response_time_ms": int((time.time() - start_time) * 1000),
-                "error": True,
-            }
+            return {"answer": NO_CONTEXT_FALLBACK_MESSAGE, "model": self.model}
 
     def generate_stream(self, question: str, context: str = "") -> Generator[str, None, None]:
-        """
-        Stream a response from the LLM token by token.
+        """Stream response from Ollama using Server-Sent Events."""
+        if not context or not context.strip():
+            yield json.dumps({"content": NO_CONTEXT_FALLBACK_MESSAGE, "done": False})
+            yield json.dumps({"content": "", "done": True})
+            return
 
-        Yields:
-            JSON strings with partial content
-        """
-        if not context:
-            user_prompt = question
-        else:
-            user_prompt = USER_PROMPT_TEMPLATE.format(
-                context=context,
-                question=question,
-            )
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            "stream": True,
-            "options": {
-                "temperature": 0.4,
-                "top_p": 0.9,
-                "num_predict": 512,
-                "repeat_penalty": 1.3,
-                "repeat_last_n": 128,
-            },
-        }
+        user_prompt = self._build_user_prompt(question, context)
 
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 with client.stream(
                     "POST",
                     f"{self.base_url}/api/chat",
-                    json=payload,
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "stream": True,
+                        "options": {
+                            "temperature": 0.1,
+                            "top_p": 0.9,
+                            "num_predict": 600,
+                            "repeat_penalty": 1.1,
+                        },
+                    },
                 ) as response:
                     response.raise_for_status()
                     for line in response.iter_lines():
-                        if line:
-                            try:
-                                data = json.loads(line)
-                                content = data.get("message", {}).get("content", "")
-                                if content:
-                                    yield json.dumps({"content": content, "done": False})
-                                if data.get("done"):
-                                    yield json.dumps({"content": "", "done": True})
-                            except json.JSONDecodeError:
-                                continue
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            content = data.get("message", {}).get("content", "")
+                            done = data.get("done", False)
+                            yield json.dumps({"content": content, "done": done})
+                            if done:
+                                break
+                        except json.JSONDecodeError:
+                            continue
+
+        except httpx.TimeoutException:
+            logger.error("LLM streaming timed out")
+            yield json.dumps({"content": "Yanıt süresi aşıldı. Lütfen tekrar deneyin.", "done": False})
+            yield json.dumps({"content": "", "done": True})
         except Exception as e:
             logger.error(f"LLM streaming failed: {e}")
-            yield json.dumps({
-                "content": "Bir hata oluştu. Lütfen tekrar deneyin.",
-                "done": True,
-                "error": True,
-            })
+            yield json.dumps({"content": NO_CONTEXT_FALLBACK_MESSAGE, "done": False})
+            yield json.dumps({"content": "", "done": True})
 
     def get_embedding(self, text: str) -> list[float] | None:
         """Get embedding vector for a text using Ollama."""
         try:
             with httpx.Client(timeout=httpx.Timeout(30.0)) as client:
+                # Try newer endpoint first
                 response = client.post(
                     f"{self.base_url}/api/embed",
-                    json={
-                        "model": settings.EMBEDDING_MODEL,
-                        "input": text,
-                    },
+                    json={"model": settings.EMBEDDING_MODEL, "input": text},
                 )
+
+                if response.status_code == 404:
+                    response = client.post(
+                        f"{self.base_url}/api/embeddings",
+                        json={"model": settings.EMBEDDING_MODEL, "prompt": text},
+                    )
+
                 response.raise_for_status()
                 data = response.json()
-                embeddings = data.get("embeddings", [])
+
+                embeddings = data.get("embeddings")
                 if embeddings:
                     return embeddings[0]
+
+                legacy_embedding = data.get("embedding")
+                if legacy_embedding:
+                    return legacy_embedding
+
                 return None
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
@@ -236,10 +258,11 @@ class LLMService:
 
     def get_embeddings_batch(self, texts: list[str]) -> list[list[float] | None]:
         """Get embeddings for multiple texts."""
-        results = []
-        for text in texts:
-            results.append(self.get_embedding(text))
-        return results
+        return [self.get_embedding(text) for text in texts]
+
+    def no_context_result(self) -> dict:
+        """Return a fallback when no retrievable context exists."""
+        return {"answer": NO_CONTEXT_FALLBACK_MESSAGE}
 
 
 # Module-level singleton

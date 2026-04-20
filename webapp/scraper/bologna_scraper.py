@@ -75,57 +75,23 @@ PROGRAM_URLS = [
 
 def _clean_bologna_text(soup: BeautifulSoup) -> str:
     """Extract and clean text from Bologna system pages."""
-    # Remove scripts and styles
     for tag in soup.find_all(["script", "style", "noscript"]):
         tag.decompose()
 
-    # Try to find the main content area
-    content_div = (
-        soup.find("div", id="contentArea")
-        or soup.find("div", class_="content")
-        or soup.find("div", id="MainContent")
-        or soup.find("form")
-    )
+    # Bologna is partly JS-rendered; fall back to full page text extraction
+    raw = soup.get_text(separator="\n", strip=True)
 
-    target = content_div if content_div else soup
-
+    # Filter out very short lines and deduplicate
+    seen = set()
     lines = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if len(line) < 3 or line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
 
-    # Extract table data (Bologna system uses lots of tables)
-    for table in target.find_all("table"):
-        headers = []
-        for th in table.find_all("th"):
-            headers.append(th.get_text(strip=True))
-        if headers:
-            lines.append(" | ".join(headers))
-            lines.append("-" * 40)
-
-        for row in table.find_all("tr"):
-            cells = [td.get_text(strip=True) for td in row.find_all(["td"])]
-            if any(cells):
-                lines.append(" | ".join(cells))
-
-    # Also get non-table text
-    for elem in target.find_all(["h1", "h2", "h3", "h4", "p", "li", "span"]):
-        text = elem.get_text(strip=True)
-        if text and len(text) > 3 and text not in "\n".join(lines):
-            if elem.name in ("h1", "h2", "h3", "h4"):
-                prefix = "#" * min(int(elem.name[1]), 4)
-                lines.append(f"\n{prefix} {text}\n")
-            elif elem.name == "li":
-                lines.append(f"• {text}")
-            else:
-                lines.append(text)
-
-    # Deduplicate
-    result = []
-    prev = ""
-    for line in lines:
-        if line.strip() and line != prev:
-            result.append(line)
-            prev = line
-
-    return "\n".join(result)
+    return "\n".join(lines)
 
 
 class BolognaScraper:
@@ -157,7 +123,7 @@ class BolognaScraper:
             soup = BeautifulSoup(response.text, "lxml")
             content = _clean_bologna_text(soup)
 
-            if len(content.strip()) < 30:
+            if len(content.strip()) < 100:
                 logger.debug(f"Skipping low-content Bologna page: {url}")
                 return None
 

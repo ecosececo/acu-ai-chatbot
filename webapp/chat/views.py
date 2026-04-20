@@ -115,16 +115,23 @@ def api_chat(request):
 
     # RAG: Retrieve relevant context
     context, sources = rag_service.build_context(question)
+    logger.info(
+        "RAG retrieval summary: context_chars=%s, source_count=%s",
+        len(context or ""),
+        len(sources or []),
+    )
 
     # Generate LLM response
     result = llm_service.generate(question, context)
+    answer = result.get("answer", "")
+    logger.debug("Generated answer (first 200 chars): %s", answer[:200])
 
     # Save assistant message
     source_urls = [s["url"] for s in sources] if sources else []
     Message.objects.create(
         conversation=conversation,
         role=Message.Role.ASSISTANT,
-        content=result["answer"],
+        content=answer,
         context_used=context[:5000] if context else "",
         sources=source_urls,
         model_name=result.get("model", settings.LLM_MODEL),
@@ -136,20 +143,26 @@ def api_chat(request):
         conversation.title = question[:100]
         conversation.save(update_fields=["title"])
 
-    response_data = {
-        "answer": result["answer"],
-        "conversation_id": str(conversation.id),
-        "sources": sources or [],
-        "model": result.get("model", settings.LLM_MODEL),
-        "response_time_ms": result.get("response_time_ms", 0),
-    }
-
-    return Response(response_data, status=status.HTTP_200_OK)
+    return Response(
+        {
+            "answer": answer,
+            "sources": sources or [],
+            "conversation_id": str(conversation.id),
+            "model": result.get("model", settings.LLM_MODEL),
+            "response_time_ms": result.get("response_time_ms"),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 def _stream_response(conversation, question):
     """Generate a Server-Sent Events streaming response."""
     context, sources = rag_service.build_context(question)
+    logger.info(
+        "RAG retrieval summary (stream): context_chars=%s, source_count=%s",
+        len(context or ""),
+        len(sources or []),
+    )
 
     def event_stream():
         full_response = ""

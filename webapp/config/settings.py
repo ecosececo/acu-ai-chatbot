@@ -133,13 +133,22 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 # ── Ollama / LLM Configuration ───────────────────────────
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
-LLM_MODEL = os.environ.get("LLM_MODEL", "mistral")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5:3b")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
 EMBEDDING_DIMENSIONS = 768  # nomic-embed-text dimension
 
 # ── RAG Configuration ────────────────────────────────────
 RAG_TOP_K = 5  # Number of similar chunks to retrieve
 RAG_SIMILARITY_THRESHOLD = 0.3  # Minimum similarity score
+RAG_FALLBACK_TOP_K = int(os.environ.get("RAG_FALLBACK_TOP_K", "8"))  # Used when retrieval returns no results
+RAG_MIN_CHUNK_CHARS = int(os.environ.get("RAG_MIN_CHUNK_CHARS", "120"))  # Filter out very short chunks
+RAG_KEYWORD_MIN_SCORE = float(os.environ.get("RAG_KEYWORD_MIN_SCORE", "0.28"))
+RAG_CONTEXT_MIN_SCORE = float(os.environ.get("RAG_CONTEXT_MIN_SCORE", "0.35"))
+RAG_CONTEXT_TOP_SOURCES = int(os.environ.get("RAG_CONTEXT_TOP_SOURCES", "3"))
+RAG_AUTO_INDEX_ON_QUERY = os.environ.get("RAG_AUTO_INDEX_ON_QUERY", "True").lower() in ("true", "1", "yes")
+RAG_AUTO_INDEX_MAX_PAGES = int(os.environ.get("RAG_AUTO_INDEX_MAX_PAGES", "0"))  # 0 = process all pending pages
+RAG_AUTO_INDEX_RELEVANT_PENDING = os.environ.get("RAG_AUTO_INDEX_RELEVANT_PENDING", "True").lower() in ("true", "1", "yes")
+RAG_AUTO_INDEX_RELEVANT_MAX_PAGES = int(os.environ.get("RAG_AUTO_INDEX_RELEVANT_MAX_PAGES", "10"))
 
 # ── Scraper Configuration ────────────────────────────────
 SCRAPE_DELAY = float(os.environ.get("SCRAPE_DELAY", "2.0"))

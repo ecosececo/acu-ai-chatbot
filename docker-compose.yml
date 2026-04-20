@@ -24,7 +24,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-acu_user}:${POSTGRES_PASSWORD:-acu_secret}@db:5432/${POSTGRES_DB:-acu_chatbot}
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://ollama:11434
-      - LLM_MODEL=${LLM_MODEL:-mistral}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:3b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
     volumes:
       - ./webapp:/app
@@ -38,11 +38,11 @@ services:
       ollama:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health/')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
     networks:
       - acu-network
@@ -82,7 +82,7 @@ services:
     networks:
       - acu-network
 
-  # ── Ollama LLM Service ──────────────────────────────────
+  # ── Ollama LLM Service ───────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: acu-ollama
@@ -92,12 +92,50 @@ services:
       - "11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0
-    # GPU support (uncomment if NVIDIA GPU available)
+    restart: unless-stopped
+    networks:
+      - acu-network
+    # GPU support — uncomment if you have an NVIDIA GPU:
     # deploy:
     #   resources:
     #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
+  # ── Ollama Model Initializer (runs once, pulls required models) ─
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: acu-ollama-init
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:3b}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+    entrypoint: >
+      /bin/sh -c "
+        echo 'Waiting for Ollama to be ready...';
+        until curl -sf http://ollama:11434/api/tags > /dev/null; do sleep 3; done;
+        echo \"Pulling LLM model: $${LLM_MODEL}\";
+        ollama pull $${LLM_MODEL};
+        echo \"Pulling embedding model: $${EMBEDDING_MODEL}\";
+        ollama pull $${EMBEDDING_MODEL};
+        echo 'All models ready!';
+      "
+    networks:
+      - acu-network
+    restart: "no"
 
+networks:
+  acu-network:
+    driver: bridge
 
-
-
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  static_files:
+  media_files:

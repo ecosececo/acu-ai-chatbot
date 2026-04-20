@@ -30,7 +30,7 @@
 This project implements an AI-powered chatbot that answers questions about Acıbadem University using data collected from the university's official websites. The chatbot uses:
 
 - **RAG (Retrieval-Augmented Generation)** with pgvector for semantic search
-- **Mistral 7B** (via Ollama) as the local LLM
+- **Qwen 2.5 3B** (via Ollama) as the local LLM
 - **Django 5.x** for the web application
 - **PostgreSQL 16** with pgvector extension for vector storage
 - **Server-Sent Events (SSE)** for streaming responses
@@ -60,7 +60,7 @@ This project implements an AI-powered chatbot that answers questions about Acıb
 1. User types a question in the chat interface
 2. Django receives the request via REST API
 3. **RAG Pipeline**: Query is embedded → pgvector semantic search finds relevant chunks
-4. Retrieved context + question are sent to Ollama (Mistral)
+4. Retrieved context + question are sent to Ollama (Qwen 2.5)
 5. LLM generates a response grounded in university data
 6. Response is streamed back to the user via SSE
 
@@ -70,7 +70,7 @@ This project implements an AI-powered chatbot that answers questions about Acıb
 |-----------|-----------|---------|
 | Web Framework | Django 5.x | REST API + Chat Interface |
 | Database | PostgreSQL 16 + pgvector | Data storage + Vector search |
-| LLM | Mistral 7B (via Ollama) | Answer generation |
+| LLM | Qwen 2.5 3B (via Ollama) | Answer generation |
 | Embeddings | nomic-embed-text (via Ollama) | Semantic embeddings (768 dims) |
 | Cache | Redis 7 | Response caching |
 | Reverse Proxy | Nginx | Static files + SSE streaming |
@@ -105,7 +105,7 @@ docker-compose up -d
 This single command will:
 - Start PostgreSQL with pgvector
 - Start Redis cache
-- Start Ollama and pull the Mistral model (~4GB download, first time only)
+- Start Ollama and pull the Qwen 2.5 3B model (~2GB download, first time only)
 - Start the Django application (with migrations & static files)
 - Start Nginx reverse proxy
 
@@ -113,14 +113,14 @@ This single command will:
 
 ```bash
 # Load curated seed data about ACU
-docker-compose exec webapp python manage.py load_seed_data
+docker-compose exec webapp python manage.py seed_knowledge
 
 # Generate vector embeddings for RAG
 docker-compose exec webapp python manage.py generate_embeddings
 
-# (Optional) Scrape live data from ACU websites
-docker-compose exec webapp python manage.py scrape_acu --source main
-docker-compose exec webapp python manage.py scrape_acu --source bologna
+# (Optional) Scrape additional live data from ACU websites
+docker-compose exec webapp python manage.py scrape_acu --max-pages 200
+docker-compose exec webapp python manage.py scrape_bologna
 docker-compose exec webapp python manage.py generate_embeddings
 ```
 
@@ -191,8 +191,9 @@ acibadem-chatbot/
 │   │   │
 │   │   └── management/commands/
 │   │       ├── scrape_acu.py       # Web scraper command
+│   │       ├── scrape_bologna.py       # Bologna system scraper command
 │   │       ├── generate_embeddings.py  # Embedding generator
-│   │       └── load_seed_data.py       # Curated seed data loader
+│   │       └── seed_knowledge.py       # Curated seed data loader
 │   │
 │   ├── scraper/                # Web Scraping Module
 │   │   ├── acu_scraper.py      # Main site scraper
@@ -237,12 +238,12 @@ Main chat endpoint. Send a question and receive an AI answer.
     "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
     "sources": [
         {
-            "url": "https://obs.acibadem.edu.tr/...",
+            "url": "https://www.acibadem.edu.tr/...",
             "title": "Bilgisayar Mühendisliği - Ders Programı",
             "score": 0.89
         }
     ],
-    "model": "mistral",
+    "model": "qwen2.5:3b",
     "response_time_ms": 3450
 }
 ```
@@ -285,11 +286,11 @@ Health check endpoint.
 
 ## 🤖 AI Integration
 
-### Model: Mistral 7B
-- **Parameters**: 7 billion
-- **Size**: ~4 GB
+### Model: Qwen 2.5 3B
+- **Parameters**: 3 billion
+- **Size**: ~2 GB
 - **Serving**: Ollama (HTTP API)
-- **Why**: Best quality-to-size ratio, strong multilingual (Turkish) support
+- **Why**: Excellent multilingual (Turkish) support, fast on CPU, good quality-to-size ratio
 
 ### RAG Pipeline
 1. **Chunking**: Documents split into ~512-char overlapping chunks
@@ -312,7 +313,7 @@ All configuration via environment variables (`.env` file):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_MODEL` | `mistral` | Ollama model name |
+| `LLM_MODEL` | `qwen2.5:3b` | Ollama model name |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
 | `POSTGRES_DB` | `acu_chatbot` | Database name |
 | `DJANGO_DEBUG` | `True` | Debug mode |
