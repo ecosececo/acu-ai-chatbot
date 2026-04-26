@@ -1,25 +1,31 @@
+(function () {
+if (window.__acuChatInitialized) {
+    return;
+}
+window.__acuChatInitialized = true;
+
 /**
  * ACU AI Chatbot — Frontend JavaScript
  *
- * Handles:
- * - Chat messaging with streaming (SSE)
- * - Conversation management
- * - UI state (sidebar, theme, etc.)
- * - Markdown rendering
+ * Multi-conversation: each conversation has its own DOM panel,
+ * AbortController, and loading state. Switching tabs never cancels streams.
  */
 
-// ── State ───────────────────────────────────────────────
-let currentConversationId = null;
-let isGenerating = false;
-let abortController = null;
 const ENABLE_RENDER_TEST_INJECTION = false;
+const REQUEST_TIMEOUT_MS = 70000;
 
-// ── DOM Elements ────────────────────────────────────────
+// ── Multi-conversation state ─────────────────────────────
+// Map<id, { id, title, isLoading, isSending, abortController, container }>
+const conversations = new Map();
+let activeConversationId = null;
+let cachedConversations = []; // last API result, used to re-render sidebar
+const upgradingConversationIds = new Set();
+
+// ── DOM Elements ─────────────────────────────────────────
 const chatForm = document.getElementById("chatForm");
 const questionInput = document.getElementById("questionInput");
 const sendBtn = document.getElementById("sendBtn");
 const stopBtn = document.getElementById("stopBtn");
-const messagesContainer = document.getElementById("messages");
 const chatContainer = document.getElementById("chatContainer");
 const welcomeScreen = document.getElementById("welcomeScreen");
 const conversationList = document.getElementById("conversationList");
@@ -33,20 +39,18 @@ const sidebarClose = document.getElementById("sidebarClose");
 const newChatBtn = document.getElementById("newChatBtn");
 const themeToggle = document.getElementById("themeToggle");
 
-// ── CSRF Token ──────────────────────────────────────────
+// ── CSRF Token ───────────────────────────────────────────
 function getCsrfToken() {
-    const cookie = document.cookie
-        .split("; ")
-        .find((row) => row.startsWith("csrftoken="));
+    const cookie = document.cookie.split("; ").find(r => r.startsWith("csrftoken="));
     return cookie ? cookie.split("=")[1] : "";
 }
 
-// ── Configure Marked ────────────────────────────────────
+// ── Configure Marked ──────────────────────────────────────
 if (typeof marked !== "undefined") {
     marked.setOptions({
         breaks: true,
         gfm: true,
-        highlight: function (code, lang) {
+        highlight: function(code, lang) {
             if (typeof hljs !== "undefined" && lang && hljs.getLanguage(lang)) {
                 return hljs.highlight(code, { language: lang }).value;
             }
@@ -55,23 +59,19 @@ if (typeof marked !== "undefined") {
     });
 }
 
-// ── Initialize ──────────────────────────────────────────
+// ── Initialize ────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
     loadConversations();
     checkSystemStatus();
     initTheme();
     autoResizeTextarea();
-
-    // Check status every 30 seconds
     setInterval(checkSystemStatus, 30000);
 });
 
-// ── Theme Management ────────────────────────────────────
+// ── Theme Management ──────────────────────────────────────
 function initTheme() {
     const saved = localStorage.getItem("acu-theme");
-    if (saved) {
-        document.documentElement.setAttribute("data-theme", saved);
-    }
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
 }
 
 themeToggle.addEventListener("click", () => {
@@ -81,11 +81,11 @@ themeToggle.addEventListener("click", () => {
     localStorage.setItem("acu-theme", next);
 });
 
-// ── Sidebar Toggle ──────────────────────────────────────
+// ── Sidebar ───────────────────────────────────────────────
 sidebarToggle.addEventListener("click", () => sidebar.classList.add("open"));
 sidebarClose.addEventListener("click", () => sidebar.classList.remove("open"));
 
-// ── Textarea Auto-resize ────────────────────────────────
+// ── Textarea Auto-resize ──────────────────────────────────
 function autoResizeTextarea() {
     questionInput.addEventListener("input", () => {
         questionInput.style.height = "auto";
@@ -94,83 +94,176 @@ function autoResizeTextarea() {
     });
 }
 
-// ── Form Submit ─────────────────────────────────────────
+// ── Form Submit ───────────────────────────────────────────
+function submitCurrentMessage() {
+    const question = questionInput.value.trim();
+    const conv = getActiveConv();
+    if (!question || !conv || conv.isLoading || conv.isSending) return;
+    sendMessage(question);
+}
+
 chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    const question = questionInput.value.trim();
-    if (!question || isGenerating) return;
-    sendMessage(question);
+    submitCurrentMessage();
 });
 
-// Handle Enter key (submit) and Shift+Enter (new line)
 questionInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        chatForm.dispatchEvent(new Event("submit"));
+        submitCurrentMessage();
     }
 });
 
-// ── Suggestion Cards ────────────────────────────────────
-document.querySelectorAll(".suggestion-card").forEach((card) => {
+// ── Suggestion Cards ──────────────────────────────────────
+document.querySelectorAll(".suggestion-card").forEach(card => {
     card.addEventListener("click", () => {
+        let conv = getActiveConv();
+        if (!conv) {
+            conv = createNewConversation();
+            activateConversation(conv.id);
+        }
+        if (conv.isLoading || conv.isSending) return;
         const question = card.getAttribute("data-question");
-        questionInput.value = question;
         sendMessage(question);
     });
 });
 
-// ── New Chat ────────────────────────────────────────────
-newChatBtn.addEventListener("click", () => {
-    currentConversationId = null;
-    messagesContainer.innerHTML = "";
-    welcomeScreen.classList.remove("hidden");
-    welcomeScreen.style.display = "";
-    topbarTitle.textContent = "Yeni Sohbet";
-    sidebar.classList.remove("open");
+// ── Conversation State Helpers ────────────────────────────
+function getActiveConv() {
+    return activeConversationId ? conversations.get(activeConversationId) : null;
+}
 
-    // Remove active class from conversations
-    document.querySelectorAll(".conversation-item").forEach((el) =>
-        el.classList.remove("active")
-    );
+function createNewConversation() {
+    const tempId = "pending-" + Date.now();
+    const container = document.createElement("div");
+    container.className = "messages messages-panel";
+    container.dataset.convId = tempId;
+    container.style.display = "none";
+    chatContainer.appendChild(container);
+    const conv = {
+        id: tempId,
+        title: "Yeni Sohbet",
+        isLoading: false,
+        isSending: false,
+        abortController: null,
+        container,
+    };
+    conversations.set(tempId, conv);
+    return conv;
+}
+
+function activateConversation(id) {
+    conversations.forEach(c => { c.container.style.display = "none"; });
+    const conv = conversations.get(id);
+    if (!conv) return;
+    activeConversationId = id;
+    conv.container.style.display = "flex";
+    welcomeScreen.style.display = conv.container.children.length > 0 ? "none" : "";
+    topbarTitle.textContent = conv.title || "Yeni Sohbet";
+    setGenerating(conv.isLoading);
+    renderTabs(); // re-renders sidebar with correct active state
+
+    // Clear input so previous typed-but-unsent text does not bleed into a new conversation
+    questionInput.value = "";
+    questionInput.style.height = "auto";
+    charCount.textContent = "0 / 2000";
+}
+
+// ── New Chat ──────────────────────────────────────────────
+newChatBtn.addEventListener("click", () => {
+    const active = getActiveConv();
+    if (active && active.container.children.length === 0 && active.id.startsWith("pending-")) {
+        activateConversation(active.id);
+    } else {
+        const conv = createNewConversation();
+        activateConversation(conv.id);
+    }
+    sidebar.classList.remove("open");
 });
 
-// ── Send Message ────────────────────────────────────────
+// ── Sidebar state (replaces top tab bar) ─────────────────
+function renderTabs() {
+    // All conversation state is shown in the sidebar, not a top tab bar.
+    renderConversationList(cachedConversations);
+}
+
+function closeConversation(id) {
+    const conv = conversations.get(id);
+    if (!conv) return;
+    if (conv.abortController) conv.abortController.abort();
+    conv.container.remove();
+    conversations.delete(id);
+    if (activeConversationId === id) {
+        if (conversations.size > 0) {
+            activateConversation(conversations.keys().next().value);
+        } else {
+            activeConversationId = null;
+            welcomeScreen.style.display = "";
+            topbarTitle.textContent = "Yeni Sohbet";
+            setGenerating(false);
+            renderTabs();
+        }
+    } else {
+        renderTabs();
+    }
+}
+
+// ── Send Message ──────────────────────────────────────────
 async function sendMessage(question) {
-    // Hide welcome screen
+    const conv = conversations.get(activeConversationId);
+    if (!conv || conv.isLoading || conv.isSending) return;
+    conv.isSending = true;
+
     welcomeScreen.style.display = "none";
+    appendMessage("user", question, [], false, null, conv.container);
 
-    // Show user message
-    appendMessage("user", question);
-
-    // Clear input
     questionInput.value = "";
     questionInput.style.height = "auto";
     charCount.textContent = "0 / 2000";
 
-    // UI state
-    setGenerating(true);
+    // Use question as temporary tab title on first message
+    if (conv.id.startsWith("pending-")) {
+        conv.title = question.length > 40 ? question.substring(0, 40) + "…" : question;
+    }
 
-    // Show typing indicator
-    const typingEl = showTypingIndicator();
+    conv.isLoading = true;
+    conv.abortController = new AbortController();
+    setGenerating(true);
+    renderTabs();
+
+    const typingEl = showTypingIndicator(conv.container);
+    let didTimeout = false;
+    const timeoutId = window.setTimeout(() => {
+        didTimeout = true;
+        if (conv.abortController) conv.abortController.abort();
+    }, REQUEST_TIMEOUT_MS);
 
     try {
-        abortController = new AbortController();
-
-        const response = await fetch("/api/chat/", {
+        const fetchOpts = {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "X-CSRFToken": getCsrfToken(),
             },
             body: JSON.stringify({
-                question: question,
-                conversation_id: currentConversationId,
+                question,
+                conversation_id: conv.id.startsWith("pending-") ? null : conv.id,
                 stream: true,
             }),
-            signal: abortController.signal,
-        });
+            signal: conv.abortController.signal,
+        };
 
-        // Remove typing indicator
+        let response;
+        try {
+            response = await fetch("/api/chat/", fetchOpts);
+        } catch (fetchErr) {
+            // Retry once after 1 s on transient connection failure (not user-abort)
+            if (fetchErr.name === "AbortError") throw fetchErr;
+            await new Promise(r => setTimeout(r, 1000));
+            if (conv.abortController.signal.aborted) throw new DOMException("Aborted", "AbortError");
+            response = await fetch("/api/chat/", fetchOpts);
+        }
+
         typingEl.remove();
 
         if (!response.ok) {
@@ -178,33 +271,37 @@ async function sendMessage(question) {
             throw new Error(errorData.error || `HTTP ${response.status}`);
         }
 
-        // Check if streaming response
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("text/event-stream")) {
-            await handleStreamResponse(response);
+            await handleStreamResponse(response, conv);
         } else {
             const data = await response.json();
-            handleRegularResponse(data);
+            handleRegularResponse(data, conv);
         }
     } catch (error) {
         typingEl.remove();
-
         if (error.name === "AbortError") {
-            appendMessage("assistant", "_Yanıt oluşturma durduruldu._");
+            const message = didTimeout
+                ? "_Yanıt süresi aşıldı. Lütfen sorunuzu daha kısa veya daha belirli şekilde tekrar deneyin._"
+                : "_Yanıt oluşturma durduruldu._";
+            appendMessage("assistant", message, [], false, null, conv.container);
         } else {
-            appendErrorMessage(
-                error.message || "Bir hata oluştu. Lütfen tekrar deneyin."
-            );
+            appendErrorMessage(error.message || "Bir hata oluştu. Lütfen tekrar deneyin.", conv.container);
         }
     } finally {
-        setGenerating(false);
-        abortController = null;
+        window.clearTimeout(timeoutId);
+        conv.isLoading = false;
+        conv.isSending = false;
+        conv.abortController = null;
+        if (activeConversationId === conv.id) setGenerating(false);
+        renderTabs();
         loadConversations();
     }
 }
 
-// ── Handle Stream Response ──────────────────────────────
-async function handleStreamResponse(response) {
+// ── Handle Stream Response ────────────────────────────────
+async function handleStreamResponse(response, conv) {
+    const container = conv.container;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let fullResponse = "";
@@ -215,104 +312,103 @@ async function handleStreamResponse(response) {
     const processEventData = (eventData) => {
         try {
             const data = JSON.parse(eventData);
-
             if (data.type === "sources") {
                 sources = data.sources || [];
             } else if (data.type === "content") {
-                const chunkContent = data.content || "";
-                if (chunkContent) {
-                    fullResponse += chunkContent;
-                    if (!messageEl) {
-                        messageEl = appendMessage("assistant", "", sources, true);
-                    }
+                const chunk = data.content || "";
+                if (chunk) {
+                    fullResponse += chunk;
+                    if (!messageEl) messageEl = appendMessage("assistant", "", sources, true, null, container);
                     updateMessageContent(messageEl, fullResponse);
                 }
             } else if (data.type === "done") {
-                currentConversationId = data.conversation_id;
-                if (!messageEl && fullResponse) {
-                    messageEl = appendMessage("assistant", "", sources, true);
-                }
-                if (messageEl) {
-                    finishMessage(messageEl, fullResponse, sources, data.response_time_ms);
-                }
+                const realId = data.conversation_id;
+                if (realId && conv.id !== realId) updateConversationId(conv.id, realId, conv);
+                if (!messageEl && fullResponse) messageEl = appendMessage("assistant", "", sources, true, null, container);
+                if (messageEl) finishMessage(messageEl, fullResponse, sources, data.response_time_ms);
             }
         } catch (e) {
-            // Skip malformed JSON payloads
+            // skip malformed JSON
         }
     };
 
     while (true) {
         const { done, value } = await reader.read();
         if (done) {
-            // Process any trailing buffered event without requiring a final delimiter.
             const trailing = buffer.trim();
             if (trailing) {
-                const dataLines = trailing
-                    .split("\n")
-                    .map((line) => line.replace(/\r$/, ""))
-                    .filter((line) => line.startsWith("data:"))
-                    .map((line) => line.slice(5).replace(/^\s/, ""));
-                if (dataLines.length > 0) {
-                    processEventData(dataLines.join("\n"));
-                }
+                const dataLines = trailing.split("\n")
+                    .map(l => l.replace(/\r$/, ""))
+                    .filter(l => l.startsWith("data:"))
+                    .map(l => l.slice(5).replace(/^\s/, ""));
+                if (dataLines.length > 0) processEventData(dataLines.join("\n"));
             }
             break;
         }
-
         buffer += decoder.decode(value, { stream: true });
         buffer = buffer.replace(/\r\n/g, "\n");
-
-        // SSE events are separated by an empty line.
-        let eventBoundary = buffer.indexOf("\n\n");
-        while (eventBoundary !== -1) {
-            const rawEvent = buffer.slice(0, eventBoundary);
-            buffer = buffer.slice(eventBoundary + 2);
-
-            const dataLines = rawEvent
-                .split("\n")
-                .map((line) => line.replace(/\r$/, ""))
-                .filter((line) => line.startsWith("data:"))
-                .map((line) => line.slice(5).replace(/^\s/, ""));
-
-            if (dataLines.length > 0) {
-                processEventData(dataLines.join("\n"));
-            }
-
-            eventBoundary = buffer.indexOf("\n\n");
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+            const rawEvent = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const dataLines = rawEvent.split("\n")
+                .map(l => l.replace(/\r$/, ""))
+                .filter(l => l.startsWith("data:"))
+                .map(l => l.slice(5).replace(/^\s/, ""));
+            if (dataLines.length > 0) processEventData(dataLines.join("\n"));
+            boundary = buffer.indexOf("\n\n");
         }
     }
 
-    // If no message element was created, show what we have
-    if (!messageEl && fullResponse) {
-        appendMessage("assistant", fullResponse, sources);
+    if (!messageEl && fullResponse) appendMessage("assistant", fullResponse, sources, false, null, container);
+}
+
+function updateConversationId(oldId, newId, convRef) {
+    if (!conversations.has(oldId)) return;
+    upgradingConversationIds.add(newId);
+    convRef.id = newId;
+    convRef.container.dataset.convId = newId;
+    conversations.delete(oldId);
+    conversations.set(newId, convRef);
+    if (activeConversationId === oldId) activeConversationId = newId;
+    const sidebarBtn = conversationList.querySelector(`[data-id="${oldId}"]`);
+    const sidebarItem = sidebarBtn ? sidebarBtn.closest(".conversation-item") : null;
+    if (sidebarItem) {
+        sidebarItem.dataset.id = newId;
+        sidebarItem.classList.toggle("active", activeConversationId === newId);
+        sidebarItem.querySelectorAll("[data-id]").forEach(el => { el.dataset.id = newId; });
+    }
+    requestAnimationFrame(() => upgradingConversationIds.delete(newId));
+}
+
+// ── Handle Regular Response ───────────────────────────────
+function handleRegularResponse(data, conv) {
+    const realId = data.conversation_id;
+    if (realId && conv.id !== realId) updateConversationId(conv.id, realId, conv);
+    appendMessage("assistant", data.answer, data.sources, false, data.response_time_ms, conv.container);
+    if (activeConversationId === conv.id) {
+        topbarTitle.textContent = (data.answer || "").substring(0, 60) + "...";
     }
 }
 
-// ── Handle Regular (non-stream) Response ────────────────
-function handleRegularResponse(data) {
-    currentConversationId = data.conversation_id;
-    appendMessage("assistant", data.answer, data.sources, false, data.response_time_ms);
-    topbarTitle.textContent = data.answer.substring(0, 60) + "...";
-}
-
-// ── Stop Generation ─────────────────────────────────────
+// ── Stop Generation ───────────────────────────────────────
 stopBtn.addEventListener("click", () => {
-    if (abortController) {
-        abortController.abort();
-    }
+    const conv = getActiveConv();
+    if (conv && conv.abortController) conv.abortController.abort();
 });
 
-// ── UI Helpers ──────────────────────────────────────────
+// ── UI Helpers ────────────────────────────────────────────
 function setGenerating(state) {
-    isGenerating = state;
     sendBtn.classList.toggle("hidden", state);
     stopBtn.classList.toggle("hidden", !state);
     sendBtn.disabled = state;
     questionInput.disabled = false;
-    questionInput.placeholder = state ? "Yanıt bekleniyor... (⏎ ile gönderebilirsiniz)" : "Bir soru sorun...";
+    questionInput.placeholder = state
+        ? "Yanıt bekleniyor... (⏎ ile gönderebilirsiniz)"
+        : "Bir soru sorun...";
 }
 
-function showTypingIndicator() {
+function showTypingIndicator(container) {
     const el = document.createElement("div");
     el.className = "message assistant";
     el.innerHTML = `
@@ -325,21 +421,20 @@ function showTypingIndicator() {
             </div>
         </div>
     `;
-    messagesContainer.appendChild(el);
+    container.appendChild(el);
     scrollToBottom();
     return el;
 }
 
-function appendMessage(role, content, sources = [], isStreaming = false, responseTimeMs = null) {
+function appendMessage(role, content, sources = [], isStreaming = false, responseTimeMs = null, container = null) {
+    const target = container || (getActiveConv() ? getActiveConv().container : null);
+    if (!target) return null;
     const el = document.createElement("div");
     el.className = `message ${role}`;
-
     const avatar = role === "user" ? "👤" : "🎓";
     const name = role === "user" ? "Sen" : "ACU Asistan";
     const time = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-
     const renderedContent = role === "assistant" ? "" : escapeHtml(content);
-
     el.innerHTML = `
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
@@ -352,15 +447,11 @@ function appendMessage(role, content, sources = [], isStreaming = false, respons
             ${role === "assistant" && responseTimeMs ? `<div class="message-meta">⏱️ ${(responseTimeMs / 1000).toFixed(1)}s</div>` : ""}
         </div>
     `;
-
     if (role === "assistant") {
         const bodyEl = el.querySelector(".message-body");
-        if (bodyEl) {
-            setAssistantMessageHtml(bodyEl, content || "");
-        }
+        if (bodyEl) setAssistantMessageHtml(bodyEl, content || "");
     }
-
-    messagesContainer.appendChild(el);
+    target.appendChild(el);
     scrollToBottom();
     return el;
 }
@@ -370,12 +461,9 @@ function setAssistantMessageHtml(element, message) {
     const html = renderMarkdown(message || "");
     console.log("RENDERED HTML:", html);
     element.innerHTML = html;
-
-    // Temporary injection for render verification.
     if (ENABLE_RENDER_TEST_INJECTION) {
         element.innerHTML = "<ul><li>TEST OK</li><li>BULLET WORKING</li></ul>";
     }
-
     console.log("FINAL DOM:", element.innerHTML);
 }
 
@@ -388,37 +476,26 @@ function updateMessageContent(messageEl, content) {
 }
 
 function finishMessage(messageEl, content, sources, responseTimeMs) {
-    // Body was already rendered by the last updateMessageContent call during streaming.
-    // Re-rendering here would cause a visible flash (innerHTML reset), so we skip it.
-
-    // Add sources
     const contentEl = messageEl.querySelector(".message-content");
     if (sources && sources.length > 0) {
         const existingSources = contentEl.querySelector(".message-sources");
-        if (!existingSources) {
-            contentEl.insertAdjacentHTML("beforeend", renderSources(sources));
-        }
+        if (!existingSources) contentEl.insertAdjacentHTML("beforeend", renderSources(sources));
     }
-
-    // Add response time
     if (responseTimeMs) {
         contentEl.insertAdjacentHTML(
             "beforeend",
             `<div class="message-meta">⏱️ ${(responseTimeMs / 1000).toFixed(1)}s</div>`
         );
     }
-
-    // Highlight code blocks
-    messageEl.querySelectorAll("pre code").forEach((block) => {
-        if (typeof hljs !== "undefined") {
-            hljs.highlightElement(block);
-        }
+    messageEl.querySelectorAll("pre code").forEach(block => {
+        if (typeof hljs !== "undefined") hljs.highlightElement(block);
     });
-
     scrollToBottom();
 }
 
-function appendErrorMessage(message) {
+function appendErrorMessage(message, container = null) {
+    const target = container || (getActiveConv() ? getActiveConv().container : null);
+    if (!target) return;
     const el = document.createElement("div");
     el.className = "message assistant";
     el.innerHTML = `
@@ -427,23 +504,17 @@ function appendErrorMessage(message) {
             <div class="error-message">${escapeHtml(message)}</div>
         </div>
     `;
-    messagesContainer.appendChild(el);
+    target.appendChild(el);
     scrollToBottom();
 }
 
 function renderSources(sources) {
     if (!sources || sources.length === 0) return "";
-
-    const items = sources
-        .map(
-            (s) => `
+    const items = sources.map(s => `
         <div class="source-item">
             📄 <a href="${escapeHtml(s.url)}" target="_blank" title="${escapeHtml(s.title)}">${escapeHtml(s.title || s.url)}</a>
             ${s.score ? `<span class="source-score">(${(s.score * 100).toFixed(0)}%)</span>` : ""}
-        </div>`
-        )
-        .join("");
-
+        </div>`).join("");
     return `
         <details class="message-sources">
             <summary>📚 Kaynaklar (${sources.length})</summary>
@@ -459,15 +530,11 @@ function renderMarkdown(text) {
     const bulletItems = [];
     const prefixLines = [];
     let currentBullet = "";
-
     for (const rawLine of lines) {
         const line = rawLine.trim();
         if (!line) continue;
-
         if (/^\s*-\s+/.test(rawLine)) {
-            if (currentBullet) {
-                bulletItems.push(currentBullet.trim());
-            }
+            if (currentBullet) bulletItems.push(currentBullet.trim());
             currentBullet = rawLine.replace(/^\s*-\s+/, "").trim();
         } else if (currentBullet) {
             currentBullet += ` ${line}`;
@@ -475,16 +542,9 @@ function renderMarkdown(text) {
             prefixLines.push(line);
         }
     }
-
-    if (currentBullet) {
-        bulletItems.push(currentBullet.trim());
-    }
-
+    if (currentBullet) bulletItems.push(currentBullet.trim());
     if (bulletItems.length > 0) {
-        const itemsHtml = bulletItems
-            .filter(Boolean)
-            .map((item) => `<li>${escapeHtml(item)}</li>`)
-            .join("");
+        const itemsHtml = bulletItems.filter(Boolean).map(item => `<li>${escapeHtml(item)}</li>`).join("");
         if (itemsHtml) {
             const prefix = prefixLines.length > 0
                 ? `<div style="white-space: pre-line;">${escapeHtml(prefixLines.join("\n"))}</div>`
@@ -492,7 +552,6 @@ function renderMarkdown(text) {
             return `${prefix}<ul>${itemsHtml}</ul>`;
         }
     }
-
     return `<div style="white-space: pre-line;">${escapeHtml(normalized)}</div>`;
 }
 
@@ -508,23 +567,48 @@ function scrollToBottom() {
     });
 }
 
-// ── Conversations ───────────────────────────────────────
+// ── Conversations (sidebar list) ──────────────────────────
 async function loadConversations() {
     try {
+        if (Array.from(conversations.values()).some(conv => conv.isLoading || conv.isSending)) return;
         const response = await fetch("/api/conversations/");
         if (!response.ok) return;
-
-        const conversations = await response.json();
-        renderConversationList(conversations);
+        const apiConvs = await response.json();
+        const activePending = Array.from(conversations.values()).filter(conv => conv.id.startsWith("pending-"));
+        const convs = apiConvs.filter(apiConv => {
+            if (conversations.has(apiConv.id) || upgradingConversationIds.has(apiConv.id)) return true;
+            return !activePending.some(pending => {
+                const pendingTitle = (pending.title || "").trim();
+                const apiTitle = (apiConv.title || "").trim();
+                return pending.isLoading && pendingTitle && apiTitle && apiTitle.startsWith(pendingTitle);
+            });
+        });
+        cachedConversations = convs;
+        // Sync titles for any open conversations
+        convs.forEach(c => {
+            if (conversations.has(c.id)) {
+                const open = conversations.get(c.id);
+                open.title = c.title || "Sohbet";
+                if (activeConversationId === c.id) topbarTitle.textContent = open.title;
+            }
+        });
+        renderConversationList(convs);
     } catch (error) {
         console.warn("Failed to load conversations:", error);
     }
 }
 
-function renderConversationList(conversations) {
+function renderConversationList(convs) {
     conversationList.innerHTML = "";
 
-    if (conversations.length === 0) {
+    // Collect pending conversations (not yet saved to backend)
+    const pendingItems = [];
+    conversations.forEach((conv, id) => {
+        if (id.startsWith("pending-")) pendingItems.push(conv);
+    });
+
+    const isEmpty = pendingItems.length === 0 && convs.length === 0;
+    if (isEmpty) {
         conversationList.innerHTML = `
             <div style="padding: 20px; text-align: center; color: var(--text-tertiary); font-size: 13px;">
                 Henüz sohbet yok
@@ -533,64 +617,108 @@ function renderConversationList(conversations) {
         return;
     }
 
-    conversations.forEach((conv) => {
-        const el = document.createElement("div");
-        el.className = `conversation-item${conv.id === currentConversationId ? " active" : ""}`;
-        el.innerHTML = `
-            <span class="conv-icon">💬</span>
-            <span class="conv-title">${escapeHtml(conv.title || "Başlıksız Sohbet")}</span>
-            <button class="conv-delete" title="Sil" data-id="${conv.id}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
-        `;
+    // Pending conversations shown at top with a close (×) button
+    pendingItems.forEach(conv => {
+        conversationList.appendChild(makeSidebarItem({
+            id: conv.id,
+            title: conv.title || "Yeni Sohbet",
+            isLoading: conv.isLoading,
+            isPending: true,
+        }));
+    });
 
-        // Click to load conversation
-        el.addEventListener("click", (e) => {
-            if (e.target.closest(".conv-delete")) return;
-            loadConversation(conv.id);
-            sidebar.classList.remove("open");
-        });
-
-        // Delete button
-        el.querySelector(".conv-delete").addEventListener("click", (e) => {
-            e.stopPropagation();
-            deleteConversation(conv.id);
-        });
-
-        conversationList.appendChild(el);
+    // API-saved conversations
+    convs.forEach(conv => {
+        const open = conversations.get(conv.id);
+        conversationList.appendChild(makeSidebarItem({
+            id: conv.id,
+            title: conv.title || "Başlıksız Sohbet",
+            isLoading: open ? open.isLoading : false,
+            isPending: false,
+        }));
     });
 }
 
+function makeSidebarItem({ id, title, isLoading, isPending }) {
+    const el = document.createElement("div");
+    el.className = `conversation-item${id === activeConversationId ? " active" : ""}`;
+    el.dataset.id = id;
+
+    const loadingDot = isLoading
+        ? `<span class="conv-loading-dot" title="Yanıt bekleniyor"></span>`
+        : "";
+
+    const actionBtn = isPending
+        ? `<button class="conv-close" title="Kapat" data-id="${id}">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+               </svg>
+           </button>`
+        : `<button class="conv-delete" title="Sil" data-id="${id}">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+               </svg>
+           </button>`;
+
+    el.innerHTML = `
+        <span class="conv-icon">💬</span>
+        <span class="conv-title">${escapeHtml(title)}</span>
+        ${loadingDot}
+        ${actionBtn}
+    `;
+
+    el.addEventListener("click", (e) => {
+        if (e.target.closest(".conv-delete") || e.target.closest(".conv-close")) return;
+        if (isPending) {
+            activateConversation(id);
+        } else {
+            loadConversation(id);
+        }
+        sidebar.classList.remove("open");
+    });
+
+    const btn = el.querySelector(isPending ? ".conv-close" : ".conv-delete");
+    btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        isPending ? closeConversation(id) : deleteConversation(id);
+    });
+
+    return el;
+}
+
 async function loadConversation(conversationId) {
+    // If already open in a tab, just switch to it
+    if (conversations.has(conversationId)) {
+        activateConversation(conversationId);
+        return;
+    }
     try {
         const response = await fetch(`/api/conversations/${conversationId}/`);
         if (!response.ok) return;
-
         const data = await response.json();
-
-        currentConversationId = data.id;
-        topbarTitle.textContent = data.title || "Sohbet";
-        welcomeScreen.style.display = "none";
-        messagesContainer.innerHTML = "";
-
-        // Render messages
-        (data.messages || []).forEach((msg) => {
+        const container = document.createElement("div");
+        container.className = "messages messages-panel";
+        container.dataset.convId = conversationId;
+        container.style.display = "none";
+        chatContainer.appendChild(container);
+        const conv = {
+            id: conversationId,
+            title: data.title || "Sohbet",
+            isLoading: false,
+            isSending: false,
+            abortController: null,
+            container,
+        };
+        conversations.set(conversationId, conv);
+        (data.messages || []).forEach(msg => {
             if (msg.role === "user") {
-                appendMessage("user", msg.content);
+                appendMessage("user", msg.content, [], false, null, container);
             } else if (msg.role === "assistant") {
-                const sources = (msg.sources || []).map((url) => ({ url, title: url }));
-                appendMessage("assistant", msg.content, sources, false, msg.response_time_ms);
+                const sources = (msg.sources || []).map(url => ({ url, title: url }));
+                appendMessage("assistant", msg.content, sources, false, msg.response_time_ms, container);
             }
         });
-
-        // Update active state in sidebar
-        document.querySelectorAll(".conversation-item").forEach((el) =>
-            el.classList.remove("active")
-        );
-        const activeItem = document.querySelector(`[data-id="${conversationId}"]`);
-        if (activeItem) {
-            activeItem.closest(".conversation-item").classList.add("active");
-        }
+        activateConversation(conversationId);
     } catch (error) {
         console.error("Failed to load conversation:", error);
     }
@@ -598,34 +726,24 @@ async function loadConversation(conversationId) {
 
 async function deleteConversation(conversationId) {
     if (!confirm("Bu sohbeti silmek istediğinize emin misiniz?")) return;
-
     try {
         await fetch(`/api/conversations/${conversationId}/delete/`, {
             method: "DELETE",
             headers: { "X-CSRFToken": getCsrfToken() },
         });
-
-        if (currentConversationId === conversationId) {
-            currentConversationId = null;
-            messagesContainer.innerHTML = "";
-            welcomeScreen.style.display = "";
-            topbarTitle.textContent = "Yeni Sohbet";
-        }
-
+        if (conversations.has(conversationId)) closeConversation(conversationId);
         loadConversations();
     } catch (error) {
         console.error("Failed to delete conversation:", error);
     }
 }
 
-// ── System Status ───────────────────────────────────────
+// ── System Status ─────────────────────────────────────────
 async function checkSystemStatus() {
     try {
         const response = await fetch("/api/health/");
         if (!response.ok) throw new Error();
-
         const data = await response.json();
-
         if (data.llm_available) {
             statusDot.className = "status-dot online";
             statusText.textContent = `Çevrimiçi — ${data.model}`;
@@ -639,3 +757,4 @@ async function checkSystemStatus() {
     }
 }
 // Touch event optimization - OmerV7
+})();

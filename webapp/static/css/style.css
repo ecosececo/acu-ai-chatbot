@@ -875,6 +875,90 @@ button {
 html {
     transition: background 0.3s ease, color 0.3s ease;
 }
+/* ── Conversation Tabs ───────────────────────────────── */
+.conv-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    scrollbar-width: thin;
+    flex-shrink: 0;
+}
+
+.conv-tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+    max-width: 180px;
+    min-width: 80px;
+    transition: background var(--transition), color var(--transition);
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.conv-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.conv-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.conv-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.conv-tab-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 1px;
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.conv-tab-close:hover {
+    opacity: 1;
+}
+
+.conv-tab-loading {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: tab-pulse 1s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes tab-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ── Multi-conversation message panels ───────────────── */
+/* Visibility managed via inline style in chat.js */
+
 /* Mobile responsive improvements - OmerV7 */
 /* UI improvements */
 /* Mobile optimizations */

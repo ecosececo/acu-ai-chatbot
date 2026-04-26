@@ -50,12 +50,14 @@ SEED_ENTRIES = [
         "title": "Bilgisayar Mühendisliği Bölümü",
         "content": (
             "Bilgisayar Mühendisliği bölümü var mı? Evet, Mühendislik ve Doğa Bilimleri Fakültesinde vardır. "
-            "Bölüm Başkanı: Prof. Dr. Ahmet Bulut. Dört yıllık İngilizce lisans programı. "
-            "Ders programı (müfredat): 1. Yıl: Calculus I-II, Fizik I-II, Programlamaya Giriş, Lineer Cebir. "
-            "2. Yıl: Veri Yapıları ve Algoritmalar, Nesne Yönelimli Programlama, Veri Tabanı Sistemleri. "
-            "3. Yıl: İşletim Sistemleri, Bilgisayar Ağları, Yapay Zeka, Makine Öğrenmesi. "
-            "4. Yıl: Bitirme Projesi, Dağıtık Sistemler, Bilgi Güvenliği, Bulut Bilişim. "
-            "Toplam 240 AKTS. Zorunlu staj: 40 iş günü."
+            "Is there a Computer Engineering department? Yes, it is in the Faculty of Engineering and Natural Sciences. "
+            "Bölüm Başkanı: Prof. Dr. Ahmet Bulut. Dört yıllık İngilizce lisans programı (4-year English-medium undergraduate). "
+            "Courses / Ders programı (müfredat): "
+            "Year 1 / 1. Yıl: Calculus I-II, Fizik I-II (Physics), Programlamaya Giriş (Intro to Programming), Lineer Cebir (Linear Algebra). "
+            "Year 2 / 2. Yıl: Veri Yapıları ve Algoritmalar (Data Structures), Nesne Yönelimli Programlama (OOP), Veri Tabanı Sistemleri (Databases). "
+            "Year 3 / 3. Yıl: İşletim Sistemleri (Operating Systems), Bilgisayar Ağları (Networks), Yapay Zeka (AI), Makine Öğrenmesi (ML). "
+            "Year 4 / 4. Yıl: Bitirme Projesi (Graduation Project), Dağıtık Sistemler (Distributed Systems), Bilgi Güvenliği (Security), Bulut Bilişim (Cloud). "
+            "Toplam / Total: 240 AKTS (ECTS). Zorunlu staj / Mandatory internship: 40 iş günü (working days)."
         ),
         "source": "seed",
     },
@@ -136,6 +138,7 @@ SEED_ENTRIES = [
         "url": "https://www.acibadem.edu.tr/akademik/lisans/tip-fakultesi/",
         "title": "Tıp Fakültesi Genel Bilgi",
         "content": (
+            "Tıp Fakültesi hakkında / About Faculty of Medicine (Tıp Fakültesi): "
             "Acıbadem Üniversitesi Tıp Fakültesi'nde eğitime 2009 yılında başlandı ve 2015'te ilk mezunlar verildi. "
             "Tıp Fakültesi Dekanı Prof. Dr. Nadi Bakırcı'dır. "
             "Tıp Fakültesi 6 yıllık (12 yarıyıl) Türkçe tıp eğitimi vermektedir. "
@@ -196,16 +199,42 @@ SEED_ENTRIES = [
     # ── Kabul ve Kayıt ──────────────────────────────────────
     {
         "url": "https://www.acibadem.edu.tr/aday-ogrenci/",
-        "title": "Kabul ve Kayıt Şartları",
+        "title": "Kabul ve Kayıt Şartları - Nasıl Başvurulur?",
         "content": (
-            "Tıp fakültesine hangi puan türüyle girilir? Tıp Fakültesine MF-3 puan türüyle girilir. "
-            "Mühendislik bölümlerine hangi puan türüyle girilir? Mühendislik bölümlerine MF-4 puan türüyle girilir. "
-            "Sağlık bilimleri bölümlerine TM veya MF puan türleriyle girilir. "
-            "Lisans programlarına giriş YKS (Yükseköğretim Kurumları Sınavı) sonuçlarına göre ÖSYM tarafından yapılmaktadır. "
-            "Uluslararası öğrenciler SAT, ACT veya kendi ülkelerinin ulusal sınavı ile başvurabilmektedir. "
+            "Nasıl başvurulur? Üniversiteye başvuru şu şekilde yapılır: "
+            "Lisans programlarına YKS (Yükseköğretim Kurumları Sınavı) sonuçlarına göre "
+            "ÖSYM (Ölçme, Seçme ve Yerleştirme Merkezi) yerleştirmesiyle başvurulur. "
+            "How to apply: Undergraduate programs use YKS exam results placed by ÖSYM (Ölçme, Seçme ve Yerleştirme Merkezi). "
+            "Başvuru süreci: YKS'ye girmek, tercih döneminde üniversiteyi seçmek, ÖSYM'nin yerleştirmesini beklemek. "
+            "Tıp Fakültesine MF-3 puan türüyle, Mühendislik bölümlerine MF-4, Sağlık bilimleri bölümlerine TM veya MF puan türleriyle girilir. "
             "Kayıt tarihleri ÖSYM takvimi ile belirlenmektedir. "
+            "Kesin kayıt için gerekli belgeler: lise diploması, YKS sonuç belgesi, nüfus cüzdanı, vesikalık fotoğraf. "
+            "Uluslararası öğrenciler SAT, ACT veya kendi ülkelerinin ulusal sınavı ile başvurabilmektedir. "
             "Vakıf üniversitesi olup öğrenim ücretleri bölüme göre değişmektedir. "
-            "Kesin kayıt için gerekli belgeler: lise diploması, YKS sonuç belgesi, nüfus cüzdanı, vesikalık fotoğraf."
+            "YKS başarı sıralamasına göre %25, %50, %100 burs imkânları mevcuttur."
+        ),
+        "source": "seed",
+    },
+    # ── Tüm Bölümler listesi ─────────────────────────────────
+    {
+        "url": "https://www.acibadem.edu.tr/akademik/lisans/",
+        "title": "Tüm Bölümler ve Programlar",
+        "content": (
+            "Hangi bölümler var? / What departments does Acibadem have? "
+            "Bölümler (Departments): "
+            "1. Tıp (Medicine) - 6 yıl (years), Türkçe (Turkish). "
+            "2. Eczacılık (Pharmacy) - 5 yıl (years). "
+            "3. Hemşirelik (Nursing). "
+            "4. Fizyoterapi ve Rehabilitasyon (Physiotherapy & Rehabilitation). "
+            "5. Beslenme ve Diyetetik (Nutrition & Dietetics). "
+            "6. Sağlık Yönetimi (Health Management). "
+            "7. Bilgisayar Mühendisliği (Computer Engineering). "
+            "8. Biyomedikal Mühendisliği (Biomedical Engineering). "
+            "9. Moleküler Biyoloji ve Genetik (Molecular Biology & Genetics). "
+            "10. Psikoloji - Türkçe (Psychology - Turkish). "
+            "11. Psikoloji - İngilizce (Psychology - English). "
+            "12. Sosyoloji (Sociology). "
+            "Toplam (Total): 11 lisans programı (undergraduate programs), 5 fakülte (schools)."
         ),
         "source": "seed",
     },
@@ -228,14 +257,53 @@ SEED_ENTRIES = [
         "url": "https://www.acibadem.edu.tr/uluslararasi-ofis/uluslararasi-ogrenciler/",
         "title": "Uluslararası Öğrenci Başvurusu",
         "content": (
-            "Erasmus ve değişim programları var mı? Evet. Yurt dışına gidebilir miyim? Evet. "
-            "Uluslararası öğrenciler nasıl başvurur? SAT, ACT, Abitur, A-Level veya IB Diploma ile başvurabilir. "
-            "Acıbadem Üniversitesi Erasmus+ programına katılmaktadır. "
-            "Erasmus kapsamında öğrenci değişimi, öğretim üyesi değişimi ve staj hareketliliği yapılmaktadır. "
-            "Erasmus anlaşması olan Avrupa üniversitelerine 1 veya 2 dönem gidebilirsiniz. "
-            "Değişim programlarına başvurmak için minimum 2.5/4.0 GPA ve dil yeterliliği gerekmektedir. "
-            "Başvurular her yıl Ocak-Şubat aylarında Uluslararası Ofis aracılığıyla yapılır. "
-            "İletişim: uluslararasi@acibadem.edu.tr"
+            "Uluslararası öğrenciler nasıl başvurur? "
+            "How can international students apply? "
+            "SAT, ACT, Abitur, A-Level veya IB Diploma ile başvurabilirler. "
+            "Ayrıca kendi ülkelerindeki ulusal üniversite sınavı sonuçları da kabul edilmektedir. "
+            "Uluslararası öğrenciler için özel kontenjanlar mevcuttur. "
+            "Yabancı uyruklu öğrenciler doğrudan üniversiteye başvurur; ÖSYM yerleştirmesine gerek yoktur. "
+            "Başvuru ve öğrenim ücretleri için: uluslararasi@acibadem.edu.tr"
+        ),
+        "source": "seed",
+    },
+    # ── Erasmus ve Değişim ───────────────────────────────────
+    {
+        "url": "https://www.acibadem.edu.tr/uluslararasi-ofis/degisim-programlari/erasmus/",
+        "title": "ERASMUS+ ve Değişim Programları",
+        "content": (
+            # Opening: bilingual FAQ anchors + contact within first ~200 chars for seed injection
+            "Erasmus programı var mı? Evet. "
+            "Uluslararası Ofis iletişim: uluslararasi@acibadem.edu.tr. "
+            "Does Acibadem have an Erasmus program? Yes. "
+            "Acıbadem University participates in ERASMUS+ and global exchange programs "
+            "with partner universities in Europe, USA, Japan, and more. "
+            # Mobility types
+            "Değişim programları / Exchange programs: "
+            "Öğrenci öğrenim hareketliliği (student learning mobility), "
+            "öğrenci staj hareketliliği (student internship mobility), "
+            "personel ders verme hareketliliği (staff teaching mobility), "
+            "personel eğitim alma hareketliliği (staff training mobility). "
+            # Eligibility — Turkish-first so TR queries answer in TR; English in parens for EN queries
+            "Başvuru koşulları (Eligibility requirements): "
+            "Lisans/ön lisans öğrencileri (Undergraduate/Associate): minimum not ortalaması GPA 2.20/4.00. "
+            "Yüksek lisans/doktora öğrencileri (Graduate/PhD): minimum GPA 2.50/4.00. "
+            "Birinci sınıf öğrencileri ve mezunlar başvuramaz (First-year students and graduates not eligible). "
+            "Süre (Duration): minimum 2 ay (2 months), maksimum 12 ay (12 months). "
+            "One semester = 30 ECTS / bir dönem 30 AKTS; one year = 60 ECTS / bir yıl 60 AKTS. "
+            # Partners
+            "Partner countries / Partner ülkeler: "
+            "Erasmus+ (European countries) and global: USA, Albania, Brazil, Bulgaria, India, Japan, Georgia, Malaysia, Pakistan. "
+            "Selected partner universities / Seçili partner üniversiteler: "
+            "Medicine/Tıp: Heidelberg University (Germany), Medical University of Vienna (Austria), Medical University Sofia (Bulgaria). "
+            "Nursing/Hemşirelik: Universita degli Studi di Foggia (Italy), Medical University of Plovdiv (Bulgaria). "
+            # Coordinators
+            "Institutional Erasmus Coordinator / Kurumsal Koordinatör: Prof. Dr. İrfan GÜNEY. "
+            "Department coordinators / Bölüm koordinatörleri: "
+            "Medicine/Tıp: Prof. Pınar TOPSEVER (pinar.topsever@acibadem.edu.tr), Prof. Özgür KURT; "
+            "Pharmacy/Eczacılık: Prof. Umut BULUT (umut.bulut@acibadem.edu.tr); "
+            "Physiotherapy/Fizyoterapi: Doç. Nuray ALACA (nuray.alaca@acibadem.edu.tr); "
+            "Nursing/Hemşirelik: Prof. Ükke KARABACAK (ukke.karabacak@acibadem.edu.tr)."
         ),
         "source": "seed",
     },

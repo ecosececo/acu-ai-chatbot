@@ -92,6 +92,7 @@ services:
       - "11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
     restart: unless-stopped
     networks:
       - acu-network

@@ -136,6 +136,7 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
 LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5:3b")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
 EMBEDDING_DIMENSIONS = 768  # nomic-embed-text dimension
+OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "5m")
 
 # ── RAG Configuration ────────────────────────────────────
 RAG_TOP_K = 5  # Number of similar chunks to retrieve

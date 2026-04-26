@@ -3,12 +3,14 @@ RAG Service — Retrieval-Augmented Generation using pgvector.
 Handles document chunking, embedding storage, and semantic search.
 """
 
+import hashlib
 import logging
 import re
 from typing import Optional
 
 from django.conf import settings
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
+from django.core.cache import cache
 from django.db import connection
 from django.db.models import Q
 from django.db.models.functions import Length
@@ -16,6 +18,20 @@ from pgvector.django import CosineDistance
 
 from ..models import DocumentChunk, WebPage
 from .llm_service import llm_service
+
+_EMBEDDING_CACHE_TTL = 3600  # 1 hour
+
+
+def _get_cached_embedding(text: str) -> list[float] | None:
+    """Return cached embedding or call Ollama and cache the result."""
+    key = "qemb:" + hashlib.md5(text.encode("utf-8")).hexdigest()
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    embedding = llm_service.get_embedding(text)
+    if embedding is not None:
+        cache.set(key, embedding, timeout=_EMBEDDING_CACHE_TTL)
+    return embedding
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +78,115 @@ QUERY_EXPANSIONS = {
     "kampus nerede": ["adres", "yerleske", "iletisim", "konum", "istanbul"],
     "ne zaman kuruldu": ["kurulus", "kuruldu", "tarihce", "hakkimizda"],
 }
+
+# Maps English phrases to Turkish retrieval terms. Longer phrases listed first
+# so phrase matching skips redundant sub-phrase matches (e.g. "computer engineering"
+# is matched before the standalone "engineering" key covers the same span).
+EN_TO_TR_QUERY_MAP: dict[str, list[str]] = {
+    # ── Specific departments / programs ──────────────────────────
+    "computer engineering":   ["bilgisayar mühendisliği", "bilgisayar"],
+    "software engineering":   ["yazılım mühendisliği", "yazılım"],
+    "biomedical engineering": ["biyomedikal mühendisliği", "biyomedikal"],
+    "molecular biology":      ["moleküler biyoloji", "genetik"],
+    "health sciences":        ["sağlık bilimleri"],
+    "physical therapy":       ["fizyoterapi rehabilitasyon"],
+    "physiotherapy":          ["fizyoterapi rehabilitasyon"],
+    "nursing":                ["hemşirelik"],
+    "pharmacy":               ["eczacılık"],
+    "medicine":               ["tıp"],
+    "medical":                ["tıp"],
+    "nutrition":              ["beslenme diyetetik"],
+    "dietetics":              ["diyetetik"],
+    "psychology":             ["psikoloji"],
+    "sociology":              ["sosyoloji"],
+    "engineering":            ["mühendislik"],
+    # ── Faculty / structure ───────────────────────────────────────
+    "faculty of medicine":    ["tıp fakültesi"],
+    "medicine faculty":       ["tıp fakültesi"],
+    "engineering faculty":    ["mühendislik fakültesi", "mühendislik"],
+    "international students": ["uluslararası öğrenci", "uluslararası"],
+    "international":          ["uluslararası"],
+    "faculties":              ["fakülteler", "fakülte"],
+    "faculty":                ["fakülte"],
+    "departments":            ["bölümler", "bölüm"],
+    "department":             ["bölüm"],
+    "programs":               ["programlar", "program"],
+    "curriculum":             ["müfredat", "ders"],
+    "courses":                ["dersler", "ders", "müfredat"],
+    "undergraduate":          ["lisans"],
+    "graduate":               ["lisansüstü", "yüksek lisans"],
+    "scholarship":            ["burs"],
+    # ── Actions / intent ─────────────────────────────────────────
+    "what faculties":         ["hangi fakülteler", "fakülteler"],
+    "what departments":       ["hangi bölümler", "bölümler"],
+    "what programs":          ["hangi programlar", "programlar"],
+    "how many faculties":     ["kaç fakülte", "fakülteler"],
+    "how can i apply":        ["nasıl başvurulur", "başvuru", "kayıt"],
+    "how to apply":           ["nasıl başvurulur", "başvuru", "kayıt"],
+    "is there":               ["var", "mevcut"],
+    "are there":              ["var", "mevcut"],
+    "apply":                  ["başvuru", "kayıt"],
+    "application":            ["başvuru"],
+    "admission":              ["kabul", "başvuru", "kayıt"],
+    "registration":           ["kayıt"],
+    # ── Location / contact ───────────────────────────────────────
+    "contact details":        ["iletişim bilgileri", "telefon", "adres"],
+    "where is":               ["nerede", "adres", "kampüs"],
+    "located":                ["nerede", "adres", "kampüs", "İstanbul"],
+    "location":               ["adres", "kampüs", "konum"],
+    "contact":                ["iletişim", "telefon", "adres"],
+    "address":                ["adres", "iletişim"],
+    "campus":                 ["kampüs", "Atakent"],
+    # ── Founding / general info ──────────────────────────────────
+    "when was":               ["ne zaman", "kuruldu"],
+    "founded":                ["kuruldu", "kuruluş"],
+    "established":            ["kuruldu", "kuruluş"],
+    "history":                ["tarihçe", "hakkında"],
+    "research":               ["araştırma"],
+}
+
+_TR_SPECIFIC_CHARS = frozenset("ışğüöçİŞĞÜÖÇı")
+
+
+def _build_retrieval_query(query: str) -> str:
+    """Augment English queries with Turkish keyword equivalents for retrieval.
+
+    English tokens don't score against Turkish content in keyword/reranker logic.
+    Appending Turkish equivalents lets the existing Turkish scoring pipeline
+    (keyword scoring, seed injection, intent detection) work for English input,
+    without changing any of that logic.
+
+    No-op when the query already contains Turkish-specific characters.
+    """
+    if any(c in _TR_SPECIFIC_CHARS for c in query):
+        return query
+
+    query_lower = query.lower()
+    added: list[str] = []
+    matched_positions: set[int] = set()
+
+    for phrase in sorted(EN_TO_TR_QUERY_MAP, key=len, reverse=True):
+        idx = query_lower.find(phrase)
+        if idx == -1:
+            continue
+        span = set(range(idx, idx + len(phrase)))
+        if span & matched_positions:
+            continue  # already covered by a longer phrase match
+        matched_positions |= span
+        added.extend(EN_TO_TR_QUERY_MAP[phrase])
+
+    if not added:
+        return query
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for term in added:
+        if term not in seen:
+            seen.add(term)
+            unique.append(term)
+
+    return query + " " + " ".join(unique)
+
 
 NOISE_SOURCE_TERMS = [
     "duyuru",
@@ -1556,6 +1681,7 @@ class RAGService:
             top_k = settings.RAG_TOP_K
 
         self._bootstrap_chunks_if_needed()
+        query = _build_retrieval_query(query)
 
         catalog_query = self._is_catalog_query(query)
 
@@ -1567,8 +1693,8 @@ class RAGService:
         query_terms = list(dict.fromkeys([query.strip().lower(), *raw_terms, *expanded_terms]))
         self._process_relevant_pending_pages(query_terms)
 
-        # Generate query embedding
-        query_embedding = llm_service.get_embedding(query)
+        # Generate query embedding (cached per unique query text)
+        query_embedding = _get_cached_embedding(query)
         if query_embedding is None:
             logger.warning("Could not generate query embedding, falling back to keyword search")
             keyword_results = self._keyword_search(query, top_k)
@@ -1911,18 +2037,19 @@ class RAGService:
             Tuple of (context_string, source_list)
         """
         context_top_sources = max(1, int(getattr(settings, "RAG_CONTEXT_TOP_SOURCES", 3)))
-        catalog_query = self._is_catalog_query(query)
+        retrieval_query = _build_retrieval_query(query)
+        catalog_query = self._is_catalog_query(retrieval_query)
         if catalog_query:
             retrieval_top_k = max(top_k or settings.RAG_TOP_K, context_top_sources * 8, 30)
         else:
             retrieval_top_k = max(top_k or settings.RAG_TOP_K, context_top_sources * 4)
-        results = self.search(query, retrieval_top_k)
+        results = self.search(retrieval_query, retrieval_top_k)
 
         if not results:
             logger.warning("RAG build_context returned 0 chunks for query: %s", query[:80])
             return "", []
 
-        cleaned_results = self._clean_results_for_context(query, results)
+        cleaned_results = self._clean_results_for_context(retrieval_query, results)
         if cleaned_results:
             selected_results = cleaned_results
             logger.info(
@@ -1958,14 +2085,19 @@ class RAGService:
                 # Generic info-seeking phrases
                 "bilgi", "bilgisi", "hakkinda", "hakkindaki", "ver", "verin",
                 "nelerdir", "anlat", "acikla", "soyle",
-                # Generic structural words
-                "bolum", "bolumu", "bolumleri", "bolumler",
+                # Generic structural words — keep singular/genitive forms but allow
+                # plural "bolumler/bolumleri" so list queries find the catalog seed
+                "bolum", "bolumu",
                 "fakulte", "fakultesi", "fakulteler",
                 "program", "programi", "programlar",
                 "universite", "universitesi",
+                # English filler words — prevent them from consuming key_words slots
+                "the", "are", "what", "where", "when", "how", "who", "which",
+                "tell", "give", "show", "does", "there", "about", "have",
+                "can", "this", "that", "these", "those", "some", "any",
             }
             key_words = [
-                w.strip("?!.,") for w in query.split()
+                w.strip("?!.,") for w in retrieval_query.split()
                 if len(w.strip("?!.,")) >= 3 and _norm(w.strip("?!.,")) not in _STOP
             ][:6]
             key_words_norm = [_norm(w) for w in key_words]
@@ -2021,7 +2153,7 @@ class RAGService:
 
         # ── Keyword supplement: if cleaned results don't mention key query terms,
         # add up to 2 chunks found via direct DB text search ─────────────────
-        query_lower = query.lower()
+        query_lower = retrieval_query.lower()
         supplement_needed = False
         if not catalog_query and selected_results:
             combined_text = " ".join(r.get("content", "") for r in selected_results).lower()
@@ -2034,7 +2166,7 @@ class RAGService:
         if supplement_needed:
             try:
                 from django.db.models import Q
-                key_words = [w for w in query.split() if len(w) >= 4][:4]
+                key_words = [w for w in retrieval_query.split() if len(w) >= 4][:4]
                 selected_urls = {r.get("url", "") for r in selected_results}
 
                 kw_filter = Q()

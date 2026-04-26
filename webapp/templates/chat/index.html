@@ -64,6 +64,9 @@
                 </div>
             </header>
 
+            <!-- Conversation Tabs -->
+            <div class="conv-tabs" id="convTabs" style="display:none;"></div>
+
             <!-- Chat Messages Area -->
             <div class="chat-container" id="chatContainer">
                 <!-- Welcome screen shown when no messages -->
@@ -72,9 +75,9 @@
                     <h2>ACU AI Asistan</h2>
                     <p>Acıbadem Üniversitesi hakkında her şeyi sorabilirsiniz!</p>
                     <div class="suggestion-grid">
-                        <button class="suggestion-card" data-question="Acıbadem Üniversitesi'nde hangi fakülteler var?">
+                        <button class="suggestion-card" data-question="Acıbadem Üniversitesi'nde kaç fakülte var?">
                             <div class="suggestion-icon">🏛️</div>
-                            <span>Fakülteler hakkında bilgi</span>
+                            <span>Fakülte sayısı</span>
                         </button>
                         <button class="suggestion-card" data-question="Bilgisayar Mühendisliği bölümünün ders programı nasıl?">
                             <div class="suggestion-icon">💻</div>
@@ -99,10 +102,7 @@
                     </div>
                 </div>
 
-                <!-- Messages area -->
-                <div class="messages" id="messages">
-                    <!-- Messages inserted dynamically -->
-                </div>
+                <!-- Conversation message panels inserted dynamically by JS -->
             </div>
 
             <!-- Input Area -->
@@ -115,6 +115,7 @@
                             rows="1"
                             maxlength="2000"
                             autofocus
+                            autocomplete="off"
                         ></textarea>
                         <button type="submit" class="btn btn-send" id="sendBtn" title="Gönder">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -134,6 +135,6 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/static/js/chat.js?v=2"></script>
+    <script src="/static/js/chat.js?v=5"></script>
 </body>
 </html>
