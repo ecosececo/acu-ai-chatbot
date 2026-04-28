@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>ACU AI Asistan — Acıbadem Üniversitesi</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
+
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined[data-weight="fill"] {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #494454;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #958ea0;
+        }
+        .message-content {
+            overflow-x: auto;
+        }
+        .message-content code {
+            background: #282a30;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.875em;
+        }
+        .message-content pre {
+            background: #282a30;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+        .message-content pre code {
+            background: none;
+            padding: 0;
+        }
+        textarea:focus {
+            outline: none;
+        }
+        .user-message {
+            background: linear-gradient(135deg, rgba(208, 188, 255, 0.15), rgba(160, 120, 255, 0.1));
+            border: 1px solid rgba(208, 188, 255, 0.2);
+        }
+        .assistant-message {
+            background: rgba(51, 52, 59, 0.4);
+            border: 1px solid rgba(149, 142, 160, 0.2);
+        }
+    </style>
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary-fixed": "#e3dfff",
+                        "inverse-on-surface": "#2e3037",
+                        "outline": "#958ea0",
+                        "background": "#111319",
+                        "surface-container-high": "#282a30",
+                        "inverse-surface": "#e2e2eb",
+                        "on-surface": "#e2e2eb",
+                        "secondary-container": "#4f319c",
+                        "surface-tint": "#d0bcff",
+                        "on-primary-container": "#340080",
+                        "on-secondary-container": "#bea8ff",
+                        "primary-container": "#a078ff",
+                        "tertiary-container": "#8e8bc2",
+                        "on-secondary-fixed": "#21005e",
+                        "error": "#ffb4ab",
+                        "surface-container-low": "#191b22",
+                        "outline-variant": "#494454",
+                        "primary-fixed": "#e9ddff",
+                        "on-error-container": "#ffdad6",
+                        "primary": "#d0bcff",
+                        "secondary-fixed": "#e8ddff",
+                        "surface-bright": "#373940",
+                        "on-secondary": "#381385",
+                        "surface-dim": "#111319",
+                        "surface-variant": "#33343b",
+                        "on-tertiary-container": "#262354",
+                        "on-primary-fixed-variant": "#5516be",
+                        "on-tertiary": "#2d2a5b",
+                        "on-secondary-fixed-variant": "#4f319c",
+                        "on-background": "#e2e2eb",
+                        "tertiary": "#c4c1fb",
+                        "on-tertiary-fixed-variant": "#444173",
+                        "on-primary": "#3c0091",
+                        "on-tertiary-fixed": "#181445",
+                        "surface-container-highest": "#33343b",
+                        "surface-container": "#1e1f26",
+                        "on-primary-fixed": "#23005c",
+                        "secondary-fixed-dim": "#cebdff",
+                        "primary-fixed-dim": "#d0bcff",
+                        "secondary": "#cebdff",
+                        "error-container": "#93000a",
+                        "on-surface-variant": "#cbc3d7",
+                        "inverse-primary": "#6d3bd7",
+                        "tertiary-fixed-dim": "#c4c1fb",
+                        "surface-container-lowest": "#0c0e14",
+                        "on-error": "#690005",
+                        "surface": "#111319"
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.25rem",
+                        lg: "0.5rem",
+                        xl: "0.75rem",
+                        full: "9999px"
+                    },
+                    spacing: {
+                        "sidebar-width": "280px",
+                        "unit": "4px",
+                        "gutter": "1.5rem"
+                    },
+                    fontFamily: {
+                        display: ["Manrope"],
+                        body: ["Manrope"]
+                    },
+                    fontSize: {
+                        "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+                        "label-sm": ["11px", { lineHeight: "14px", letterSpacing: "0.05em", fontWeight: "600" }],
+                        "body-md": ["14px", { lineHeight: "20px", letterSpacing: "0em", fontWeight: "400" }],
+                        "body-sm": ["13px", { lineHeight: "18px", letterSpacing: "0.01em", fontWeight: "400" }],
+                        "headline-md": ["16px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "headline-lg": ["20px", { lineHeight: "28px", letterSpacing: "-0.02em", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex antialiased">
+    <!-- TopNavBar (Mobile Only) -->
+    <nav class="md:hidden fixed top-0 w-full bg-surface-container-high/20 backdrop-blur-md border-b border-white/5 h-16 flex items-center justify-between px-6 z-50">
+        <div class="flex items-center gap-3">
+            <button id="sidebarToggle" class="text-primary hover:text-primary-container transition-colors">
+                <span class="material-symbols-outlined text-2xl">menu</span>
+            </button>
+            <span class="font-headline-md text-headline-md text-on-surface" data-topbar-title>Acıbadem AI</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <button id="themeToggle" class="text-on-surface-variant hover:text-primary transition-colors">
+                <span class="material-symbols-outlined text-xl">brightness_4</span>
+            </button>
+            <a href="/admin/" target="_blank" class="text-on-surface-variant hover:text-primary transition-colors">
+                <span class="material-symbols-outlined text-xl">admin_panel_settings</span>
+            </a>
+        </div>
+    </nav>
+
+    <!-- SideNavBar (Desktop) -->
+    <aside id="sidebar" class="hidden md:flex fixed left-0 top-0 h-screen w-[280px] bg-surface-container/50 backdrop-blur-xl border-r border-white/5 flex-col z-40 transition-transform duration-300 md:translate-x-0 -translate-x-full">
+        <!-- Header -->
+        <div class="p-6 border-b border-white/5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-surface-container-highest border border-outline-variant flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-primary text-xl" data-weight="fill">school</span>
+            </div>
+            <div>
+                <h1 class="font-headline-md text-headline-md text-on-surface">Acıbadem AI</h1>
+                <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Academic Intelligence</p>
+            </div>
+        </div>
+
+        <!-- New Chat CTA -->
+        <div class="p-4">
+            <button id="newChatBtn" class="w-full bg-primary-container text-on-primary-container hover:bg-primary-container/90 transition-colors duration-200 rounded-lg py-3 px-4 flex items-center justify-center gap-2 font-label-md text-label-md">
+                <span class="material-symbols-outlined text-[18px]">add</span>
+                Yeni Sohbet
+            </button>
+        </div>
+
+        <!-- History Section -->
+        <div class="flex-1 min-h-0 overflow-y-auto px-4 py-2 flex flex-col gap-1">
+            <div class="px-2 py-1">
+                <span class="font-label-sm text-label-sm text-outline uppercase text-[10px]">Geçmiş</span>
+            </div>
+            <div id="conversationList" class="flex flex-col gap-1">
+                <!-- Conversations loaded dynamically -->
+            </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="p-4 border-t border-white/5 flex flex-col gap-2">
+            <button id="statusBtn" class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:text-on-surface hover:bg-white/5 rounded-lg transition-colors w-full text-left text-sm" disabled title="Model durumu">
+                <span id="statusDot" class="w-3 h-3 rounded-full bg-surface-dim animate-pulse"></span>
+                <span id="statusText" class="text-label-sm text-xs">Bağlantı kontrol ediliyor...</span>
+            </button>
+            <a href="/admin/" target="_blank" class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:text-on-surface hover:bg-white/5 rounded-lg transition-colors cursor-pointer w-full text-left">
+                <span class="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+                <span class="font-label-md text-label-md">Admin Panel</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col md:pl-[280px] pt-16 md:pt-0 h-screen relative">
+        <!-- Top App Bar for Desktop Main Canvas -->
+        <div class="hidden md:flex absolute top-0 right-0 left-[280px] h-16 items-center justify-between px-8 z-30 bg-surface-container-high/20 backdrop-blur-md border-b border-white/5">
+            <div class="flex items-center gap-3 min-w-0">
+                <span class="font-headline-md text-headline-md text-on-surface truncate" data-topbar-title>Yeni Sohbet</span>
+            </div>
+            <div class="flex items-center gap-6">
+                <button id="themeToggle" class="text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[22px]">brightness_4</span>
+                </button>
+                <a href="/admin/" target="_blank" class="text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[22px]">admin_panel_settings</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Canvas Center -->
+        <div class="flex-1 overflow-y-auto flex flex-col items-center justify-start pt-8 md:pt-24 pb-4 md:pb-12 px-4 md:px-12">
+            <!-- Welcome Screen -->
+            <div id="welcomeScreen" class="w-full max-w-[800px] flex flex-col items-center gap-12">
+                <!-- Logo/Header -->
+                <div class="flex flex-col items-center gap-4 text-center">
+                    <div class="w-16 h-16 rounded-xl bg-surface-container border border-white/10 flex items-center justify-center shadow-[0_0_30px_rgba(208,188,255,0.1)]">
+                        <span class="material-symbols-outlined text-primary text-4xl" data-weight="fill">school</span>
+                    </div>
+                    <h2 class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight">ACU AI Asistan</h2>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant max-w-md">Acıbadem Üniversitesi hakkında soularınıza yanıt almak için aşağıdaki konulardan birini seçin ya da doğrudan sorunuzu yazın.</p>
+                </div>
+
+                <!-- 3x2 Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+                    <button class="suggestion-card group flex flex-col p-5 bg-surface-container-low/50 hover:bg-surface-container/80 backdrop-blur-xl border border-white/5 hover:border-primary/30 rounded-xl transition-all duration-300 text-left items-start gap-3 h-full" data-question="Acıbadem Üniversitesi'nde hangi fakülteler var?">
+                        <span class="material-symbols-outlined text-tertiary-container group-hover:text-primary transition-colors text-2xl">account_balance</span>
+                        <span class="font-label-md text-label-md text-on-surface">Fakülteler hakkında bilgi</span>
+                    </button>
+
+                    <button class="suggestion-card group flex flex-col p-5 bg-surface-container-low/50 hover:bg-surface-container/80 backdrop-blur-xl border border-white/5 hover:border-primary/30 rounded-xl transition-all duration-300 text-left items-start gap-3 h-full" data-question="Bilgisayar Mühendisliği bölümünün ders programı nasıl?">
+                        <span class="material-symbols-outlined text-tertiary-container group-hover:text-primary transition-colors text-2xl">laptop_chromebook</span>
+                        <span class="font-label-md text-label-md text-on-surface">Bilgisayar Müh. dersleri</span>
+                    </button>
+
+                    <button class="suggestion-card group flex flex-col p-5 bg-surface-container-low/50 hover:bg-surface-container/80 backdrop-blur-xl border border-white/5 hover:border-primary/30 rounded-xl transition-all duration-300 text-left items-start gap-3 h-full" data-question="Burs imkânları ve ücretler hakkında bilgi verir misin?">
+                        <span class="material-symbols-outlined text-tertiary-container group-hover:text-primary transition-colors text-2xl">payments</span>
+                        <span class="font-label-md text-label-md text-on-surface">Burs ve ücretler</span>
+                    </button>
+
+                    <button class="suggestion-card group flex flex-col p-5 bg-surface-container-low/50 hover:bg-surface-container/80 backdrop-blur-xl border border-white/5 hover:border-primary/30 rounded-xl transition-all duration-300 text-left items-start gap-3 h-full" data-question="Kampüs yaşamı ve öğrenci kulüpleri hakkında bilgi ver.">
+                        <span class="material-symbols-outlined text-tertiary-container group-hover:text-primary transition-colors text-2xl">domain</span>
+                        <span class="font-label-md text-label-md text-on-surface">Kampüs yaşamı</span>
+                    </button>
+
+                    <button class="suggestion-card group flex flex-col p-5 bg-surface-container-low/50 hover:bg-surface-container/80 backdrop-blur-xl border border-white/5 hover:border-primary/30 rounded-xl transition-all duration-300 text-left items-start gap-3 h-full" data-question="Erasmus ve değişim programları hakkında bilgi ver.">
+                        <span class="material-symbols-outlined text-tertiary-container group-hover:text-primary transition-colors text-2xl">public</span>
+                        <span class="font-label-md text-label-md text-on-surface">Erasmus programları</span>
+                    </button>
+
+                    <button class="suggestion-card group flex flex-col p-5 bg-surface-container-low/50 hover:bg-surface-container/80 backdrop-blur-xl border border-white/5 hover:border-primary/30 rounded-xl transition-all duration-300 text-left items-start gap-3 h-full" data-question="Nasıl başvuru yapabilirim? Kabul şartları neler?">
+                        <span class="material-symbols-outlined text-tertiary-container group-hover:text-primary transition-colors text-2xl">description</span>
+                        <span class="font-label-md text-label-md text-on-surface">Başvuru ve kabul</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages Container -->
+            <div id="messages" class="w-full max-w-4xl flex flex-col gap-4 hidden">
+                <!-- Messages inserted here -->
+            </div>
+        </div>
+
+        <!-- Input Area (Bottom) -->
+        <div class="p-6 md:px-12 md:pb-8 flex justify-center w-full bg-gradient-to-t from-background via-background/90 to-transparent sticky bottom-0">
+            <div class="w-full max-w-[800px] relative">
+                <form id="chatForm" class="relative">
+                    <div class="bg-surface-container-highest/80 backdrop-blur-2xl border border-white/10 rounded-2xl flex items-end p-2 shadow-[0_0_40px_rgba(0,0,0,0.5)] focus-within:border-primary/50 transition-colors duration-300">
+                        <button type="button" class="p-3 text-on-surface-variant hover:text-primary transition-colors flex shrink-0" title="Ara">
+                            <span class="material-symbols-outlined text-[20px]">search</span>
+                        </button>
+
+                        <textarea
+                            id="questionInput"
+                            placeholder="Acıbadem Üniversitesi hakkında bir soru sorun..."
+                            class="w-full bg-transparent border-none text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant/50 focus:ring-0 resize-none py-3 px-1 h-[48px]"
+                            rows="1"
+                            maxlength="2000"
+                            autofocus
+                        ></textarea>
+
+                        <button type="submit" id="sendBtn" class="bg-primary hover:bg-primary-container text-on-primary rounded-xl w-10 h-10 flex items-center justify-center shrink-0 transition-colors duration-200 ml-2 mb-1" title="Gönder">
+                            <span class="material-symbols-outlined text-[18px]" data-weight="fill">send</span>
+                        </button>
+
+                        <button type="button" id="stopBtn" class="bg-error hover:bg-error-container text-on-error rounded-xl w-10 h-10 flex items-center justify-center shrink-0 transition-colors duration-200 ml-2 mb-1 hidden" title="Durdur">
+                            <span class="material-symbols-outlined text-[18px]" data-weight="fill">stop</span>
+                        </button>
+                    </div>
+
+                    <div class="text-center mt-3">
+                        <span class="font-label-sm text-label-sm text-outline">AI can make mistakes. Verify important academic information.</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/js/chat.js?v=6"></script>
+</body>
+</html>
