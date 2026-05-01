@@ -1,0 +1,136 @@
+# Production docker-compose for cloud deployment.
+# Uses Groq API for LLM (no GPU required) and CPU-only Ollama for embeddings.
+# Copy .env.example to .env and fill in GROQ_API_KEY before deploying.
+
+services:
+  # ── Nginx Reverse Proxy ──────────────────────────────────
+  nginx:
+    build: ./nginx
+    container_name: acu-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+    depends_on:
+      webapp:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Django Web Application ───────────────────────────────
+  webapp:
+    build: ./webapp
+    container_name: acu-webapp
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-acu_user}:${POSTGRES_PASSWORD:-acu_secret}@acu-db:5432/${POSTGRES_DB:-acu_chatbot}
+      - REDIS_URL=redis://acu-redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=groq
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-bge-m3}
+      - EMBEDDING_DIMENSIONS=1024
+      - OLLAMA_NUM_GPU=0
+    volumes:
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── PostgreSQL with pgvector ─────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: acu-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acu_chatbot}
+      POSTGRES_USER: ${POSTGRES_USER:-acu_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acu_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acu_user} -d ${POSTGRES_DB:-acu_chatbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Redis Cache ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: acu-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Ollama (CPU-only, embeddings only) ───────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: acu-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - acu-network
+
+  # ── Ollama Model Initializer ─────────────────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: acu-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: |
+      sh -c "
+        OLLAMA_HOST=http://ollama:11434 ollama list | grep -q bge-m3 || OLLAMA_HOST=http://ollama:11434 ollama pull bge-m3 &&
+        echo 'Embedding model ready'
+      "
+    networks:
+      - acu-network
+    restart: "no"
+
+volumes:
+  static_files:
+  media_files:
+  postgres_data:
+  redis_data:
+  ollama_data:
+
+networks:
+  acu-network:
