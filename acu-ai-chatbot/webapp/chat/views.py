@@ -7,31 +7,25 @@ import json
 import logging
 import re
 import time
-import uuid
 
 from django.conf import settings
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
-    throttle_classes,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
 
-from .models import Conversation, Message, WebPage, DocumentChunk
+from .models import Conversation, Message, WebPage
 from .serializers import (
     ChatRequestSerializer,
-    ChatResponseSerializer,
     ConversationListSerializer,
     ConversationSerializer,
     StatsSerializer,
-    WebPageSerializer,
 )
 from .services.llm_service import llm_service
 from .services.rag_service import rag_service
@@ -218,11 +212,9 @@ def api_chat(request):
     context, sources = rag_service.build_context(question)
 
     # Web search: always run alongside RAG when enabled
-    web_search_used = False
     if web_search_enabled and getattr(settings, 'WEB_SEARCH_ENABLED', True):
         web_results = web_search_service.search(question)
         if web_results:
-            web_search_used = True
             web_context = web_search_service.build_web_context(web_results)
             context = f"{context}\n\n--- WEB ARAMA SONUÇLARI ---\n{web_context}" if context else web_context
             for wr in web_results:
@@ -291,11 +283,9 @@ def _stream_response(conversation, question, web_search_enabled=False):
     sources = []
 
     # Web search is handled inside event_stream after the conversation event.
-    web_search_used = False
     if False:
         web_results = web_search_service.search(question)
         if web_results:
-            web_search_used = True
             web_context = web_search_service.build_web_context(web_results)
             context = f"{context}\n\n--- WEB ARAMA SONUÇLARI ---\n{web_context}" if context else web_context
             for wr in web_results:

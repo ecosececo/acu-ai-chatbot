@@ -8,8 +8,6 @@ import logging
 import os
 import re
 import time
-from pathlib import Path
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 import django
@@ -19,9 +17,8 @@ from bs4 import BeautifulSoup
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from django.conf import settings
-from chat.models import DocumentChunk, WebPage
-from chat.services.rag_service import rag_service
+from chat.models import DocumentChunk, WebPage  # noqa: E402
+from chat.services.rag_service import rag_service  # noqa: E402
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -307,8 +304,8 @@ def scrape_with_resume(max_pages: int = 1200, delay: float = 1.5):
                 continue
 
             # Boilerplate filter: if >60% of content is nav/menu items
-            lines = [l for l in content.split("\n") if l.strip()]
-            short_lines = [l for l in lines if len(l.strip()) < 25]
+            lines = [line for line in content.split("\n") if line.strip()]
+            short_lines = [line for line in lines if len(line.strip()) < 25]
             if lines and len(short_lines) / len(lines) > 0.65 and len(content) < 1000:
                 logger.debug(f"  Skip (boilerplate): {url}")
                 continue
@@ -356,7 +353,7 @@ def scrape_with_resume(max_pages: int = 1200, delay: float = 1.5):
     save_checkpoint(visited, queue, saved_count, chunk_count)
 
     logger.info("=" * 60)
-    logger.info(f"SCRAPE COMPLETE")
+    logger.info("SCRAPE COMPLETE")
     logger.info(f"Pages saved: {saved_count}")
     logger.info(f"Chunks created: {chunk_count}")
     logger.info(f"Queue remaining: {len(queue)}")

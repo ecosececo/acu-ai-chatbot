@@ -8,11 +8,11 @@ import logging
 import time
 from typing import Generator
 
-_LLM_MAX_RETRIES = 1
-
 import httpx
 from django.conf import settings
 from django.core.cache import cache
+
+_LLM_MAX_RETRIES = 1
 
 logger = logging.getLogger(__name__)
 

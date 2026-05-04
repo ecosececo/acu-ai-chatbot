@@ -1,11 +1,10 @@
 import os
-import sys
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from chat.services.llm_service import web_llm_service
+from chat.services.llm_service import web_llm_service  # noqa: E402
 
 print("--- Test Basladi ---")
 try:

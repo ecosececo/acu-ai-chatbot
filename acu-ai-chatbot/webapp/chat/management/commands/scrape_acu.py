@@ -9,7 +9,6 @@ Usage:
     python manage.py scrape_acu --source=bologna --clear  # Clear and re-scrape Bologna
 """
 from django.core.management.base import BaseCommand
-from django.db import transaction
 
 from chat.models import WebPage, DocumentChunk
 from chat.services.rag_service import rag_service
